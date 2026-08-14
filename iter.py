@@ -14,19 +14,19 @@ from pathlib import Path
 # --------------------------------------------------------------------
 # 0. Configuration:
 # --------------------------------------------------------------------
-LLM_TIMEOUT=30
+LLM_TIMEOUT = 60
 PRINT_CALLS = False
 MAX_MEMORY_CHARS = 50000
 MAX_TOOL_OUTPUT_CHARS = 10000
 EXPERIENCE_SIZE = 100
 MAX_FAST_STEPS = 50
-SLOW_STEP_DELAY = 60
+SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
 RETURN_VALUE_PRESERVE = 2000
 DEFAULT_DELAY = 0 #default delay added irregard of whether in slow mode
-MAX_TOKENS = 3000
+MAX_TOKENS = 1000
 INIT_WAIT = 10
-MAX_TOOLS = 20
+MAX_TOOLS = 30
 MAX_TOOL_DESCRIPTION_CHARS = 500
 DYNAMIC_TIMEOUT = 5
 MODEL = os.getenv("LLM_MODEL", "ggml-org/gemma-4-26B-A4B-it-GGUF:Q4_0")
