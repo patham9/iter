@@ -14,19 +14,19 @@ from pathlib import Path
 # --------------------------------------------------------------------
 # 0. Configuration:
 # --------------------------------------------------------------------
-LLM_TIMEOUT=30
+LLM_TIMEOUT = 60
 PRINT_CALLS = False
 MAX_MEMORY_CHARS = 50000
 MAX_TOOL_OUTPUT_CHARS = 10000
 EXPERIENCE_SIZE = 100
 MAX_FAST_STEPS = 50
-SLOW_STEP_DELAY = 60
+SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
 RETURN_VALUE_PRESERVE = 2000
 DEFAULT_DELAY = 0 #default delay added irregard of whether in slow mode
-MAX_TOKENS = 3000
+MAX_TOKENS = 1000
 INIT_WAIT = 10
-MAX_TOOLS = 20
+MAX_TOOLS = 30
 MAX_TOOL_DESCRIPTION_CHARS = 500
 DYNAMIC_TIMEOUT = 5
 MODEL = os.getenv("LLM_MODEL", "ggml-org/gemma-4-26B-A4B-it-GGUF:Q4_0")
@@ -46,7 +46,9 @@ def dynamic_worker():
         spec = importlib.util.spec_from_file_location("_dynamic_" + path.stem, path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        if function == "__tool_metadata__":
+        if function == "__description__":
+            result = str(module.DESCRIPTION)
+        elif function == "__tool_metadata__":
             parameters = inspect.signature(module.run).parameters.values()
             description = str(module.DESCRIPTION)
             if len(description) > MAX_TOOL_DESCRIPTION_CHARS:
@@ -108,7 +110,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "--invoke":
     sys.exit(0)
 
 # --------------------------------------------------------------------
-# 2. Local tool helpers:
+# 2. Runtime helpers:
 # --------------------------------------------------------------------
 def get_current_time():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -136,8 +138,13 @@ def slow_wait_for_input():
             return event_append
     return ""
 
+def save_experience(experience):
+    with open("experience.tmp", "w", encoding="utf-8") as file:
+        json.dump(experience, file, ensure_ascii=False, indent=2)
+    os.replace("experience.tmp", "experience.json")
+
 # --------------------------------------------------------------------
-# 3. Local tools:
+# 3. Dynamic components:
 # --------------------------------------------------------------------
 def load_tools():
     inops = {}
@@ -160,6 +167,18 @@ def native_tools(inops):
         tools.append({"type": "function", "function": {"name": name, "description": description, "parameters": {"type": "object", "properties": { parameter: { "type": "string" } for parameter in parameters }, "required": [parameter for parameter in parameters], "additionalProperties": False}}})
     return tools
 
+def load_transformation_descriptions():
+    entries = []
+    for path in sorted(Path("transformations").glob("*.py")):
+        if path.name.startswith("_"):
+            continue
+        result = invoke_dynamic(path, "__description__")
+        if result["ok"]:
+            entries.append(f"{path.stem}: {result['result']}")
+        else:
+            entries.append(f"{path.stem}: [DESCRIPTION MISSING]")
+    return "\n".join(entries)
+
 def apply_transformation(messages, tools):
     errors = []
     paths = sorted(path for path in Path("transformations").glob("*.py") if not path.name.startswith("_"))
@@ -172,11 +191,6 @@ def apply_transformation(messages, tools):
         except Exception as error:
             errors.append(f"[RUNTIME ERROR in {path}: {type(error).__name__}: {error}. Repair {path} if needed.]")
     return messages, tools, "\n".join(errors)
-
-def save_experience(experience):
-    with open("experience.tmp", "w", encoding="utf-8") as file:
-        json.dump(experience, file, ensure_ascii=False, indent=2)
-    os.replace("experience.tmp", "experience.json")
 
 # --------------------------------------------------------------------
 # 4. Main loop
@@ -223,11 +237,12 @@ while True:
             if omitted_tools > 0:
                 temporary_message += [{"role": "user", "content": f"[TOOL LIMIT REACHED: {omitted_tools} tools are currently omitted. Consolidate or remove tools if they are needed.]"}]
             TOOLS = native_tools(INOPS)
+            TRANSFORMATIONS = load_transformation_descriptions()
             MEMORY = "\n\n".join(path.name + ":\n" + path.read_text().strip() for path in Path("memory").iterdir() if path.is_file() and not path.name.startswith("_"))
             if len(MEMORY) > MAX_MEMORY_CHARS:
                 omitted = len(MEMORY) - MAX_MEMORY_CHARS
                 MEMORY = MEMORY[:MAX_MEMORY_CHARS] + f"\n[MEMORY TRUNCATED: {omitted} chars omitted, REDUCE MEMORY FILES!]"
-            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip() + "\n\n" + "reprogramming.txt:\n" + open("reprogramming.txt").read().strip() + "\n\n" + MEMORY}] + experience + temporary_message
+            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip() + "\n\n" + "reprogramming.txt:\n" + open("reprogramming.txt").read().strip() + "\n\nACTIVE CONTEXT TRANSFORMATIONS:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS)
             if transformation_error:
                 request_messages += [{"role": "user", "content": transformation_error}]

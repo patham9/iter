@@ -11,6 +11,7 @@ def run():
 
 #TRANSFORMATIONS:
 You can create transformations as .py files in ./transformations/ (executed in alphabetical order) to modify messages and tools before each model call. It must expose:
+DESCRIPTION = "What the context transformation does"
 def transform(messages, tools):
     return messages, tools
 Example use cases:
