@@ -16,13 +16,14 @@ from pathlib import Path
 # --------------------------------------------------------------------
 LLM_TIMEOUT = 60
 PRINT_CALLS = False
-MAX_MEMORY_CHARS = 50000
-MAX_TOOL_OUTPUT_CHARS = 10000
+MAX_MEMORY_CHARS = 10000
+MAX_TOOL_CALLS = 10
+MAX_TOOL_OUTPUT_CHARS = 5000
 EXPERIENCE_SIZE = 100
 MAX_FAST_STEPS = 50
 SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
-RETURN_VALUE_PRESERVE = 2000
+RETURN_VALUE_PRESERVE = 0
 DEFAULT_DELAY = 0 #default delay added irregard of whether in slow mode
 MAX_TOKENS = 1000
 INIT_WAIT = 10
@@ -238,19 +239,17 @@ while True:
                 temporary_message += [{"role": "user", "content": f"[TOOL LIMIT REACHED: {omitted_tools} tools are currently omitted. Consolidate or remove tools if they are needed.]"}]
             TOOLS = native_tools(INOPS)
             TRANSFORMATIONS = load_transformation_descriptions()
-            MEMORY = "\n\n".join(path.name + ":\n" + path.read_text().strip() for path in Path("memory").iterdir() if path.is_file() and not path.name.startswith("_"))
-            if len(MEMORY) > MAX_MEMORY_CHARS:
-                omitted = len(MEMORY) - MAX_MEMORY_CHARS
-                MEMORY = MEMORY[:MAX_MEMORY_CHARS] + f"\n[MEMORY TRUNCATED: {omitted} chars omitted, REDUCE MEMORY FILES!]"
-            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip() + "\n\n" + "reprogramming.txt:\n" + open("reprogramming.txt").read().strip() + "\n\nACTIVE CONTEXT TRANSFORMATIONS:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
+            MEMORY = "./memory/:\n" + "\n".join(str(path) for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts))
+            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip()}, {"role": "system", "content": "./transformations/:\n" + TRANSFORMATIONS}, {"role": "system", "content": MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS)
             if transformation_error:
                 request_messages += [{"role": "user", "content": transformation_error}]
             print("BEFORE LLM")
             response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice="required", max_tokens=MAX_TOKENS)
-            print("AFTER LLM")
+            print("AFTER LLM", response)
             message = response.choices[0].message
             if message.tool_calls:
+                message.tool_calls = message.tool_calls[:MAX_TOOL_CALLS]
                 break
             temporary_message += [{"role": "user", "content": "Your previous response was invalid. Do not answer in plain text. Call at least one tool now."}]
         print(f"RESPONSE {response}\nFINISH_REASON {response.choices[0].finish_reason}\nUSAGE {response.usage}")
