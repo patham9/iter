@@ -14,9 +14,8 @@ from pathlib import Path
 # --------------------------------------------------------------------
 # 0. Configuration:
 # --------------------------------------------------------------------
-LLM_TIMEOUT = 60
+LLM_TIMEOUT = 600
 PRINT_CALLS = False
-MAX_MEMORY_CHARS = 10000
 MAX_TOOL_CALLS = 10
 MAX_TOOL_OUTPUT_CHARS = 5000
 EXPERIENCE_SIZE = 100
@@ -30,7 +29,7 @@ INIT_WAIT = 10
 MAX_TOOLS = 30
 MAX_TOOL_DESCRIPTION_CHARS = 500
 DYNAMIC_TIMEOUT = 5
-MODEL = os.getenv("LLM_MODEL", "ggml-org/gemma-4-26B-A4B-it-GGUF:Q4_0")
+MODEL = os.getenv("LLM_MODEL", "mlx-community/gemma-4-26b-a4b-it-4bit")
 BASE_URL = os.getenv("BASE_URL", "http://192.168.64.1:2277/v1")
 API_KEY = os.getenv("AI_API_KEY", "dummy")
 
@@ -239,8 +238,18 @@ while True:
                 temporary_message += [{"role": "user", "content": f"[TOOL LIMIT REACHED: {omitted_tools} tools are currently omitted. Consolidate or remove tools if they are needed.]"}]
             TOOLS = native_tools(INOPS)
             TRANSFORMATIONS = load_transformation_descriptions()
+            #MEMORY = "\n\n".join(path.name + ":\n" + path.read_text().strip() for path in Path("memory").iterdir() if path.is_file() and not path.name.startswith("_"))
+            #if len(MEMORY) > MAX_MEMORY_CHARS:
+            #    omitted = len(MEMORY) - MAX_MEMORY_CHARS
+            #    MEMORY = MEMORY[:MAX_MEMORY_CHARS] + f"\n[MEMORY TRUNCATED: {omitted} chars omitted, REDUCE MEMORY FILES!]"
+            #MEMORY = "MEMORIES:\n" + "\n".join(
+            #    f"memory/{path.name}"
+            #    for path in sorted(Path("memory").iterdir())
+            #    if path.is_file() and not path.name.startswith("_")
+            #)
             MEMORY = "./memory/:\n" + "\n".join(str(path) for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts))
-            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip()}, {"role": "system", "content": "./transformations/:\n" + TRANSFORMATIONS}, {"role": "system", "content": MEMORY}] + experience + temporary_message
+            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip() + "\n\n" + "reprogramming.txt:\n" + open("reprogramming.txt").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
+            #request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip()}, {"role": "system", "content": "./transformations/:\n" + TRANSFORMATIONS}, {"role": "system", "content": MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS)
             if transformation_error:
                 request_messages += [{"role": "user", "content": transformation_error}]
@@ -251,7 +260,10 @@ while True:
             if message.tool_calls:
                 message.tool_calls = message.tool_calls[:MAX_TOOL_CALLS]
                 break
-            temporary_message += [{"role": "user", "content": "Your previous response was invalid. Do not answer in plain text. Call at least one tool now."}]
+            if llm_result['finish_reason'] == "length":
+                temporary_message += [{"role": "user", "content": f"Your response was too long, do not exceed {MAX_TOKENS*2} characters!"}]
+            else:
+                temporary_message += [{"role": "user", "content": "Your previous response was invalid. Do not answer in plain text. Call at least one tool now."}]
         print(f"RESPONSE {response}\nFINISH_REASON {response.choices[0].finish_reason}\nUSAGE {response.usage}")
         experience = [{**old_message, "content": old_message.get("content", "")[:RETURN_VALUE_PRESERVE] + " [TRUNCATED]"} if old_message.get("role") == "tool" and len(old_message.get("content", "")) > RETURN_VALUE_PRESERVE else old_message for old_message in experience]
         experience += [{**{key: value for key, value in message.model_dump(exclude_none=True).items() if key not in ("reasoning", "reasoning_details", "reasoning_content")}, "content": "Step " + get_current_time() + ": [TOOL CALL]"}]
