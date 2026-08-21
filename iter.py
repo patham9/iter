@@ -9,22 +9,27 @@ import importlib.util
 import signal
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 
 # --------------------------------------------------------------------
 # 0. Configuration:
 # --------------------------------------------------------------------
+MAX_MEMORY_CHARS = 1000 #When memory turns into an index
 LLM_TIMEOUT = 600
+KEEP_REASONING_IN_EPISODE = True
 PRINT_CALLS = False
 MAX_TOOL_CALLS = 10
 MAX_TOOL_OUTPUT_CHARS = 5000
-EXPERIENCE_SIZE = 100
+MAX_EXPERIENCE_SIZE = 100   #20 percent
+RETAIN_EXPERIENCE_SIZE = 80 #jumps
 MAX_FAST_STEPS = 50
 SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
 RETURN_VALUE_PRESERVE = 0
+RETURN_VALUE_PRESERVE_MESSAGES = 10
 DEFAULT_DELAY = 0 #default delay added irregard of whether in slow mode
-MAX_TOKENS = 1000
+MAX_TOKENS = 2524
 INIT_WAIT = 10
 MAX_TOOLS = 30
 MAX_TOOL_DESCRIPTION_CHARS = 500
@@ -200,13 +205,21 @@ try:
         experience = json.load(file)
 except FileNotFoundError:
     experience = []
-client = openai.OpenAI(api_key=API_KEY, base_url=BASE_URL, timeout=LLM_TIMEOUT, max_retries=0)
+SESSION_ID = str(uuid.uuid4())
+client = openai.OpenAI(api_key=API_KEY, base_url=BASE_URL, timeout=LLM_TIMEOUT, max_retries=0, default_headers={"X-APC-Tenant": "iter", "x-session-id": SESSION_ID})
 time.sleep(INIT_WAIT)
 Path("memory").mkdir(exist_ok=True)
 Path("transformations").mkdir(exist_ok=True)
 post_task_mode, autonomous_steps, new_burst, pending_event_append = False, 0, True, ""
 while True:
-    experience = experience[-EXPERIENCE_SIZE:]
+    if len(experience) >= MAX_EXPERIENCE_SIZE:
+        experience = experience[-RETAIN_EXPERIENCE_SIZE:]
+        for i, old_message in enumerate(experience):
+            if i < len(experience) - RETURN_VALUE_PRESERVE_MESSAGES:
+                if old_message.get("role") == "tool" and len(old_message.get("content", "")) > RETURN_VALUE_PRESERVE:
+                    old_message["content"] = old_message.get("content", "")[:RETURN_VALUE_PRESERVE] + " [TRUNCATED]"
+                for key in ("reasoning", "reasoning_details", "reasoning_content"):
+                    old_message.pop(key, None)
     while experience and experience[0].get("role") == "tool":
         experience = experience[1:]
     history_checkpoint = len(experience) #before user input
@@ -215,22 +228,26 @@ while True:
         print("BEFORE RECEIVE")
         event_append = pending_event_append or receive()
         print("AFTER RECEIVE")
-        temporary_message = []
         if event_append:
             autonomous_steps, new_burst, post_task_mode = 0, False, False
             print("IN FROM CHANNEL " + event_append)
             experience += [{"role": "user", "content": "Step " + get_current_time() + ": " + event_append}]
             save_experience(experience)
             pending_event_append = ""
+            base_temporary_message = []
         elif new_burst:
             post_task_mode, new_burst = True, False
-            temporary_message += [{"role": "user", "content": "Step " + get_current_time() + ": [TASK COMPLETED. DO NOT RE-SEND THE COMPLETED RESPONSE. NOW QUERY FOR AND PICK A TASK BASED ON YOUR GOALS, PREFERABLY MEMORY CONSOLIDATION: FINDING EPISODES WHICH SUPPORT / CONTRADICT LTM ITEMS, LINKING EPISODES, PROMOTING USEFUL MEMORIES]"}]
+            base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [TASK COMPLETED. DO NOT RE-SEND THE COMPLETED RESPONSE. NOW QUERY FOR AND PICK A TASK BASED ON YOUR GOALS, PREFERABLY MEMORY CONSOLIDATION: FINDING EPISODES WHICH SUPPORT / CONTRADICT LTM ITEMS, LINKING EPISODES, PROMOTING USEFUL MEMORIES]"}]
         elif post_task_mode:
-            temporary_message += [{"role": "user", "content": "Step " + get_current_time() + ": [NO NEW USER INPUT. CONTINUE AUTONOMOUS WORK. DO NOT REPEAT THE PREVIOUS RESPONSE. ONLY USE send FOR GENUINELY NEW INFORMATION OR WHEN USER INPUT IS NEEDED.]"}]
+            base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [NO NEW USER INPUT. CONTINUE AUTONOMOUS WORK. DO NOT REPEAT THE PREVIOUS RESPONSE. ONLY USE send FOR GENUINELY NEW INFORMATION OR WHEN USER INPUT IS NEEDED.]"}]
         else:
-            temporary_message += [{"role": "user", "content": "Step " + get_current_time() + ": [NO ADDITIONAL USER INPUT. CONTINUE THE CURRENT USER TASK.]"}]
+            base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [NO ADDITIONAL USER INPUT. CONTINUE THE CURRENT USER TASK.]"}]
         history_checkpoint = len(experience) #as we want not to loose user input even when exception
+        retry_message = None
         while True:
+            temporary_message = list(base_temporary_message)
+            if retry_message:
+                temporary_message += retry_message
             INOPS, omitted_tools, tool_load_error = load_tools()
             if tool_load_error:
                 temporary_message += [{"role": "user", "content": tool_load_error}]
@@ -238,35 +255,32 @@ while True:
                 temporary_message += [{"role": "user", "content": f"[TOOL LIMIT REACHED: {omitted_tools} tools are currently omitted. Consolidate or remove tools if they are needed.]"}]
             TOOLS = native_tools(INOPS)
             TRANSFORMATIONS = load_transformation_descriptions()
-            #MEMORY = "\n\n".join(path.name + ":\n" + path.read_text().strip() for path in Path("memory").iterdir() if path.is_file() and not path.name.startswith("_"))
-            #if len(MEMORY) > MAX_MEMORY_CHARS:
-            #    omitted = len(MEMORY) - MAX_MEMORY_CHARS
-            #    MEMORY = MEMORY[:MAX_MEMORY_CHARS] + f"\n[MEMORY TRUNCATED: {omitted} chars omitted, REDUCE MEMORY FILES!]"
-            #MEMORY = "MEMORIES:\n" + "\n".join(
-            #    f"memory/{path.name}"
-            #    for path in sorted(Path("memory").iterdir())
-            #    if path.is_file() and not path.name.startswith("_")
-            #)
-            MEMORY = "./memory/:\n" + "\n".join(str(path) for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts))
+            memory_paths = [path for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts)]
+            memory_contents = [(path, path.read_text().strip()) for path in memory_paths]
+            if sum(len(content) for _, content in memory_contents) <= MAX_MEMORY_CHARS:
+                MEMORY = "./memory/:\n" + "\n\n".join(f"{path}:\n{content}" for path, content in memory_contents)
+            else:
+                MEMORY = "./memory/:\n" + "\n".join(str(path) for path in memory_paths)
             request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip() + "\n\n" + "reprogramming.txt:\n" + open("reprogramming.txt").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
-            #request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip()}, {"role": "system", "content": "./transformations/:\n" + TRANSFORMATIONS}, {"role": "system", "content": MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS)
             if transformation_error:
                 request_messages += [{"role": "user", "content": transformation_error}]
             print("BEFORE LLM")
-            response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice="required", max_tokens=MAX_TOKENS)
+            response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice="required", max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
             print("AFTER LLM", response)
             message = response.choices[0].message
             if message.tool_calls:
                 message.tool_calls = message.tool_calls[:MAX_TOOL_CALLS]
                 break
-            if llm_result['finish_reason'] == "length":
-                temporary_message += [{"role": "user", "content": f"Your response was too long, do not exceed {MAX_TOKENS*2} characters!"}]
-            else:
-                temporary_message += [{"role": "user", "content": "Your previous response was invalid. Do not answer in plain text. Call at least one tool now."}]
+            try:
+                if response.choices[0].finish_reason == "length":
+                    retry_message = [{"role": "user", "content": f"Your response was too long, do not exceed {MAX_TOKENS*2} characters!"}]
+                else:
+                    retry_message = [{"role": "user", "content": "Your previous response was invalid. Do not answer in plain text. Call at least one tool now."}]
+            except:
+                retry_message = [{"role": "user", "content": "Your previous response was invalid. Do not answer in plain text. Call at least one tool now."}]
         print(f"RESPONSE {response}\nFINISH_REASON {response.choices[0].finish_reason}\nUSAGE {response.usage}")
-        experience = [{**old_message, "content": old_message.get("content", "")[:RETURN_VALUE_PRESERVE] + " [TRUNCATED]"} if old_message.get("role") == "tool" and len(old_message.get("content", "")) > RETURN_VALUE_PRESERVE else old_message for old_message in experience]
-        experience += [{**{key: value for key, value in message.model_dump(exclude_none=True).items() if key not in ("reasoning", "reasoning_details", "reasoning_content")}, "content": "Step " + get_current_time() + ": [TOOL CALL]"}]
+        experience += [{key: value for key, value in message.model_dump(exclude_none=True).items() if KEEP_REASONING_IN_EPISODE or key not in ("reasoning", "reasoning_details", "reasoning_content")}]
         tool_outputs = []
         for tool_call in message.tool_calls:
             tool_name = tool_call.function.name
