@@ -15,7 +15,7 @@ from pathlib import Path
 # --------------------------------------------------------------------
 # 0. Configuration:
 # --------------------------------------------------------------------
-MAX_MEMORY_CHARS = 1000 #When memory turns into an index
+MAX_MEMORY_CHARS = 3000 #When memory turns into an index
 LLM_TIMEOUT = 600
 KEEP_REASONING_IN_EPISODE = True
 PRINT_CALLS = False
@@ -256,12 +256,17 @@ while True:
             TOOLS = native_tools(INOPS)
             TRANSFORMATIONS = load_transformation_descriptions()
             memory_paths = [path for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts)]
-            memory_contents = [(path, path.read_text().strip()) for path in memory_paths]
-            if sum(len(content) for _, content in memory_contents) <= MAX_MEMORY_CHARS:
+            memory_contents = [(path, path.read_text(encoding="utf-8", errors="replace").strip()) for path in memory_paths]
+            memory_len = sum(len(content) for _, content in memory_contents)
+            if memory_len <= MAX_MEMORY_CHARS:
+                MARGIN = MAX_MEMORY_CHARS - memory_len
+                MEMORY = f"[{MARGIN} CHARACTERS BELOW MAXIMUM]"
                 MEMORY = "./memory/:\n" + "\n\n".join(f"{path}:\n{content}" for path, content in memory_contents)
             else:
-                MEMORY = "./memory/:\n" + "\n".join(str(path) for path in memory_paths)
-            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip() + "\n\n" + "reprogramming.txt:\n" + open("reprogramming.txt").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
+                DIFF = memory_len - MAX_MEMORY_CHARS
+                MEMORY = f"[REDUCE MEMORY FILES BY {DIFF} CHARACTERS IN TOTAL FOR FULL PROPER VIEW]"
+                MEMORY += "\n./memory/:\n" + "\n".join(str(path) for path in memory_paths)
+            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n" + "reprogramming.txt:\n" + open("reprogramming.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS)
             if transformation_error:
                 request_messages += [{"role": "user", "content": transformation_error}]
@@ -269,6 +274,8 @@ while True:
             response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice="required", max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
             print("AFTER LLM", response)
             message = response.choices[0].message
+            if message.content:
+                message.content += "\n[NOT DELIVERED TO ANY CHANNEL. IF THIS WAS INTENDED AS COMMUNICATION, USE send.]"
             if message.tool_calls:
                 message.tool_calls = message.tool_calls[:MAX_TOOL_CALLS]
                 break
