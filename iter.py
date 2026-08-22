@@ -281,11 +281,11 @@ while True:
                 break
             try:
                 if response.choices[0].finish_reason == "length":
-                    retry_message = [{"role": "user", "content": f"[YOUR RESPONSE WAS TOO LONG, DO NOT EXCEED {MAX_TOKENS*2} CHARACTERS!]"}]
+                    retry_message = [{"role": "user", "content": f"[YOUR RESPONSE WAS TOO LONG, DO NOT EXCEED {MAX_TOKENS*2} CHARACTERS. YOUR UNDELIVERED RESPONSE WAS: {message.content!r}]"}]
                 else:
-                    retry_message = [{"role": "user", "content": "[YOUR PREVIOUS RESPONSE WAS INVALID. DO NOT ANSWER IN PLAIN TEXT. CALL AT LEAST ONE TOOL NOW."}]
+                    retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.content!r}]"}]
             except:
-                retry_message = [{"role": "user", "content": "[YOUR PREVIOUS RESPONSE WAS INVALID. DO NOT ANSWER IN PLAIN TEXT. CALL AT LEAST ONE TOOL NOW.]"}]
+                retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.content!r}]"}]
         print(f"RESPONSE {response}\nFINISH_REASON {response.choices[0].finish_reason}\nUSAGE {response.usage}")
         experience += [{key: value for key, value in message.model_dump(exclude_none=True).items() if KEEP_REASONING_IN_EPISODE or key not in ("reasoning", "reasoning_details", "reasoning_content")}]
         tool_outputs = []
