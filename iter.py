@@ -237,7 +237,7 @@ while True:
             base_temporary_message = []
         elif new_burst:
             post_task_mode, new_burst = True, False
-            base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [TASK COMPLETED. DO NOT RE-SEND THE COMPLETED RESPONSE. NOW QUERY FOR AND PICK A TASK BASED ON YOUR GOALS, PREFERABLY MEMORY CONSOLIDATION: FINDING EPISODES WHICH SUPPORT / CONTRADICT LTM ITEMS, LINKING EPISODES, PROMOTING USEFUL MEMORIES]"}]
+            base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [TASK COMPLETED. DO NOT RE-SEND THE COMPLETED RESPONSE BUT SEND IN CASE YOU FORGOT. NOW QUERY FOR AND PICK A TASK BASED ON YOUR GOALS, PREFERABLY MEMORY CONSOLIDATION: FINDING EPISODES WHICH SUPPORT / CONTRADICT LTM ITEMS, LINKING EPISODES, PROMOTING USEFUL MEMORIES]"}]
         elif post_task_mode:
             base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [NO NEW USER INPUT. CONTINUE AUTONOMOUS WORK. DO NOT REPEAT THE PREVIOUS RESPONSE. ONLY USE send FOR GENUINELY NEW INFORMATION OR WHEN USER INPUT IS NEEDED.]"}]
         else:
@@ -316,8 +316,12 @@ while True:
         save_experience(experience)
         print("Output> " + "\n".join(tool_outputs))
         autonomous_steps = 0 if event_append else autonomous_steps + 1
-        if tool_name == "nop" or autonomous_steps >= MAX_FAST_STEPS:
+        called_nop = any(call.function.name == "nop" for call in message.tool_calls)
+        if called_nop:
             new_burst, autonomous_steps = True, 0
+            pending_event_append = slow_wait_for_input()
+        elif autonomous_steps >= MAX_FAST_STEPS:
+            autonomous_steps = 0
             pending_event_append = slow_wait_for_input()
     except Exception as error:
         print(f"Output> {type(error).__name__}: {error}")
