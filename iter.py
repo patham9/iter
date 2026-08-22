@@ -260,12 +260,12 @@ while True:
             memory_len = sum(len(content) for _, content in memory_contents)
             if memory_len <= MAX_MEMORY_CHARS:
                 MARGIN = MAX_MEMORY_CHARS - memory_len
-                MEMORY = f"[{MARGIN} CHARACTERS BELOW MAXIMUM]"
-                MEMORY = "./memory/:\n" + "\n\n".join(f"{path}:\n{content}" for path, content in memory_contents)
+                MEMORY = f"[{MARGIN} CHARACTERS BELOW MAXIMUM]\n./memory/:\n"
+                MEMORY += "\n\n".join(f"{path}:\n{content}" for path, content in memory_contents)
             else:
                 DIFF = memory_len - MAX_MEMORY_CHARS
-                MEMORY = f"[ERROR: REDUCE MEMORY FILES BY {DIFF} CHARACTERS IN TOTAL FOR FULL PROPER VIEW]"
-                MEMORY += "\n./memory/:\n" + "\n".join(str(path) for path in memory_paths)
+                MEMORY = "./memory/:\n" + "\n".join(str(path) for path in memory_paths)
+                temporary_message += [{"role": "user", "content": f"[MEMORY OVER CAPACITY BY {DIFF} CHARS. FIX THIS FIRST.]"}]
             request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS)
             if transformation_error:
