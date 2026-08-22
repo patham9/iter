@@ -266,7 +266,7 @@ while True:
                 DIFF = memory_len - MAX_MEMORY_CHARS
                 MEMORY = f"[REDUCE MEMORY FILES BY {DIFF} CHARACTERS IN TOTAL FOR FULL PROPER VIEW]"
                 MEMORY += "\n./memory/:\n" + "\n".join(str(path) for path in memory_paths)
-            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n" + "reprogramming.txt:\n" + open("reprogramming.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
+            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS)
             if transformation_error:
                 request_messages += [{"role": "user", "content": transformation_error}]
@@ -281,11 +281,11 @@ while True:
                 break
             try:
                 if response.choices[0].finish_reason == "length":
-                    retry_message = [{"role": "user", "content": f"Your response was too long, do not exceed {MAX_TOKENS*2} characters!"}]
+                    retry_message = [{"role": "user", "content": f"[YOUR RESPONSE WAS TOO LONG, DO NOT EXCEED {MAX_TOKENS*2} CHARACTERS!]"}]
                 else:
-                    retry_message = [{"role": "user", "content": "Your previous response was invalid. Do not answer in plain text. Call at least one tool now."}]
+                    retry_message = [{"role": "user", "content": "[YOUR PREVIOUS RESPONSE WAS INVALID. DO NOT ANSWER IN PLAIN TEXT. CALL AT LEAST ONE TOOL NOW."}]
             except:
-                retry_message = [{"role": "user", "content": "Your previous response was invalid. Do not answer in plain text. Call at least one tool now."}]
+                retry_message = [{"role": "user", "content": "[YOUR PREVIOUS RESPONSE WAS INVALID. DO NOT ANSWER IN PLAIN TEXT. CALL AT LEAST ONE TOOL NOW.]"}]
         print(f"RESPONSE {response}\nFINISH_REASON {response.choices[0].finish_reason}\nUSAGE {response.usage}")
         experience += [{key: value for key, value in message.model_dump(exclude_none=True).items() if KEEP_REASONING_IN_EPISODE or key not in ("reasoning", "reasoning_details", "reasoning_content")}]
         tool_outputs = []
