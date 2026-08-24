@@ -211,15 +211,21 @@ time.sleep(INIT_WAIT)
 Path("memory").mkdir(exist_ok=True)
 Path("transformations").mkdir(exist_ok=True)
 post_task_mode, autonomous_steps, new_burst, pending_event_append = False, 0, True, ""
+cleanup_interval = MAX_EXPERIENCE_SIZE - RETAIN_EXPERIENCE_SIZE
+cleanup_bucket = len(experience) // cleanup_interval
 while True:
-    if len(experience) >= MAX_EXPERIENCE_SIZE:
-        experience = experience[-RETAIN_EXPERIENCE_SIZE:]
+    current_bucket = len(experience) // cleanup_interval
+    if current_bucket > cleanup_bucket:
         for i, old_message in enumerate(experience):
             if i < len(experience) - RETURN_VALUE_PRESERVE_MESSAGES:
                 if old_message.get("role") == "tool" and len(old_message.get("content", "")) > RETURN_VALUE_PRESERVE:
                     old_message["content"] = old_message.get("content", "")[:RETURN_VALUE_PRESERVE] + " [TRUNCATED]"
                 for key in ("reasoning", "reasoning_details", "reasoning_content"):
                     old_message.pop(key, None)
+        cleanup_bucket = current_bucket
+    if len(experience) >= MAX_EXPERIENCE_SIZE:
+        experience = experience[-RETAIN_EXPERIENCE_SIZE:]
+        cleanup_bucket = len(experience) // cleanup_interval
     while experience and experience[0].get("role") == "tool":
         experience = experience[1:]
     history_checkpoint = len(experience) #before user input
@@ -281,7 +287,7 @@ while True:
                 break
             try:
                 if response.choices[0].finish_reason == "length":
-                    retry_message = [{"role": "user", "content": f"[YOUR RESPONSE WAS TOO LONG, DO NOT EXCEED {MAX_TOKENS*2} CHARACTERS. YOUR UNDELIVERED RESPONSE WAS: {message.content!r}]"}]
+                    retry_message = [{"role": "user", "content": "[OUTPUT TOKEN LIMIT REACHED. CALL THE REQUIRED TOOL CONCISELY.]"}]
                 else:
                     retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.content!r}]"}]
             except:
