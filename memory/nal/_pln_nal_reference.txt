@@ -1,0 +1,88 @@
+PLN/NAL Inference Reference (2026-08-12, consolidated 06:59)
+================================================
+
+## Libraries
+- lib_nars.metta, lib_pln.metta in ~/PeTTa/lib/
+- lib_nal7.metta: ~/PeTTa/repos/mettaclaw/lib_nal7.metta (symlinked to ~/PeTTa/lib/)
+- Import: !(import! &self lib/lib_nars) — NO quotes, NO .metta extension
+- metta.py auto-imports lib_nars and lib_pln by default
+- NAL7: !(import! &self lib/lib_nars) THEN !(import! &self lib/lib_nal7)
+- WITHOUT symlink, NAL7 import silently fails (rules echo back input)
+
+## NAL (|- operator, --> link type)
+- 82 |- rules in lib_nars.metta (ALL GAPS CLOSED 2026-08-12)
+- Link types: --> (Inheritance), <-> (Similarity), ==> (Implication)
+- Deduction: f=f1*f2, c=f1*f2*c1*c2; Revision: weighted avg, c=w2c(w1+w2)
+- Induction = Abduction with swapped args; Exemplification: f=1.0
+- All 5 NAL rules tested OK. Plus: contraposition, equivalence construction/
+  decomposition, similarity construction, comparison, resemblance, analogy
+  both directions, NAL-6 higher-order induction+abduction, negated variants.
+
+## NAL7 Temporal (|-nal7 operator) — ALL 10 RULE TYPES VERIFIED
+- Link types: =/> (predictive), =|> (retroactive), </> (equivalence), <|> (concurrent)
+- |-t wrapper broken (unique-atom not built-in). Workaround: two bidirectional rules
+  (= (|-t $a $b) (|-nal7 $a $b)) and (= (|-t $a $b) (|-nal7 $b $a))
+- Temporal analogy subject/consequent asymmetry: consequent works, subject fails
+  (NAL design property). Workaround: G1187 compound wrapper.
+- Verified: induction, syllogism, MP, abduction, analogy(consequent),
+  retroactive syllogism, equivalence/concurrent resemblance, equivalence construction
+
+## PLN (|- operator with PLN link types) — 16/17 RULES WORK
+- CRITICAL: PLN uses |- operator (same as NAL), NOT |~
+- CRITICAL: Truth values are SEPARATE tuple elements:
+  CORRECT: ((Inheritance A B) (stv f c))  WRONG: (Inheritance A B (stv f c))
+- STV OVERRIDE for stateless mode: (= (STV $atom) (stv 0.5 0.5)) after import
+- 4 rules need no STV: Revision, ModusPonens, Negation, SymmetricModusPonens
+- 12 rules work with STV override: Deduction(Inh/Imp), Induction(Inh/Imp),
+  Abduction(Inh/Imp), Inversion(Inh/Imp), EquivToImp, TransitiveSim
+- 3 fail: Evaluation Modus Ponens (MeTTa can't unify $x in (Predicate $x) position)
+
+## Test Suite: memory/test_suite.metta (23 tests, all passing)
+NAL/PLN Reasoning History (consolidated from chroma_db 2026-04 through 2026-07)
+===============================================================================
+
+NAL |- OPERATOR: universal inference dispatcher
+- Two same-term premises -> revision. Two different-term premises -> abduction+induction+similarity+analogy simultaneously.
+- Deduction requires explicit ==> implication premise.
+- 82 |- rules in lib_nars.metta (ALL GAPS CLOSED 2026-08-12)
+
+NAL TRUTH FORMULAS (verified 2026-06-12):
+- Deduction: f=f1*f2, c=f1*f2*c1*c2
+- Abduction: f=f2, c=w2c(max(f1,f2)*c1*c2)
+- Induction: f=f2, c=w2c(f1*c1*c2)
+- Revision: f=(w1*f1+w2*f2)/(w1+w2), c=(w1+w2)/(w1+w2+1) where w=c/(1-c)
+- Exemplification: f=1.0
+
+PLN vs NAL BEHAVIORAL DIFFERENCE (2026-04-23):
+NAL |- with variable-free terms produces concrete conclusions with truth value decay.
+PLN with $1 variables does NOT auto-ground — returns unresolved expression.
+NAL is inferentially richer per cycle. PLN prior-aware induction/abduction radically different from NAL.
+
+PLN 5 TRUTH FUNCTIONS (G1257, 2026-07-04):
+- Deduction: near-identical to NAL (prior-adjusted)
+- Induction: radically different (PLN prior-aware, NAL 0.8 vs PLN 0.178)
+- Abduction: radically different (PLN prior-aware, NAL 0.3 vs PLN 0.489)
+- Revision: IDENTICAL to NAL
+- Negation: IDENTICAL to NAL (1-s, confidence preserved)
+KEY: PLN genuine advantage
+NAL7 Temporal Properties: NAL7Temporal.lean (14 examples, formally verified 2026-08-13)
+
+Tool Reference (updated 2026-08-12)
+=========================================
+See tools/ directory for source code. Key notes:
+
+lean_check.py — Lean 4 v4.30.0 via elan. 30s timeout. Bare Lean lacks tauto/simp/omega.
+  KEY: `cases p <;> cases q <;> rfl` for Bool tautologies. decide/rfl/omega work.
+  Mathlib NOT available. Real type → use Nat with scaled integers.
+
+metta.py — MeTTa via ~/PeTTa/run.sh. Auto-imports lib_nars + lib_pln. 30s timeout.
+compound.py — Python with all tools as callables. Meta-tool.
+
+LEAN TACTIC AVAILABILITY (bare Lean 4 v4.30.0, no Mathlib):
+- WORKS: decide, rfl, omega, simp, ring, unfold, cases, constructor
+- FAILS: linarith, tauto, field_simp, nlinarith, exact?,Nat.adj
+- Pattern: unfold defs; omega. Or: cases p <;> cases q <;> rfl
+- Real type: use Nat with scaled integers (e.g. 0.5 → 5, 0.9 → 9)
+
+NAL/PLN REFERENCE: See pln_nal_reference.txt and test_suite.metta
+PettaClaw: 43 Lean files, 608 theorems/examples, 0 sorry, 34 axiom-free (corrected 2026-08-22)

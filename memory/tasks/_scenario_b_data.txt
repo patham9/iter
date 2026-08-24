@@ -1,0 +1,5 @@
+Semantic: Sensor-X reports consistent temperature drift of 0.5C.|semantic_text
+Numeric: {log_id: 992, value: 0.51, unit: 'C', timestamp: 1724234400}|numeric_log
+Logic: (implies (drift_X (== 0.5C)))|symbolic_logic
+Visual: Image_Analysis shows thermal gradient consistent with 0.5C shift.|visual_description
+Time: Event sequence synchronized with 0.5C shift at T+40s.|sensor_timestamp

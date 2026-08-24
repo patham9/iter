@@ -1,0 +1,150 @@
+{
+    "services": {
+        "watchdog_daemon_v2": {
+            "status": "running_ready",
+            "modules": [
+                "metta_bridge.py",
+                "diagnostic_report_generator.py",
+                "watchdog_orchestrator.py"
+            ],
+            "endpoint": "watchdog_v2_modules/watchdog_orchestrator.py",
+            "capabilities": [
+                "stability_audit",
+                "alert_calibration",
+                "semantic_drift_detection"
+            ]
+        },
+        "grounding_connector_v2": {
+            "status": "running_ready",
+            "modules": [
+                "grounding_connector.py"
+            ],
+            "endpoint": "watchdog_v2_modules/grounding_connector.py",
+            "capabilities": [
+                "hybrid_rotation_grounding",
+                "symbolic_verification"
+            ]
+        }
+    },
+    "last_updated": "2026-08-20T22:48:00Z",
+    "metta": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "simulated_dispatch": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "contradict": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "link_episode": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "episodes_generator": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "forget": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "formalize_metta": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "unlink_episode": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "remember": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "charlie_server_upload": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "send": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "shell": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "reminder": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "lean_check_retry": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "memory_update": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "support": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "python": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "lean_check": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "escalation_engine": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    },
+    "guard_layer": {
+        "status": "active",
+        "capability": "epistemic_gated",
+        "risk_level": "high",
+        "description": "Auto-registered for EBP gating. Check documentation for details."
+    }
+}

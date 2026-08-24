@@ -1,0 +1,44 @@
+Lessons File (consolidated 2026-08-12, trimmed 2026-08-14)
+====================================
+
+Cached Lookup Problem — Critical Lesson
+KEY INSIGHT: Having formal reasoning available != using it to constrain output.
+FAILURE MODE: Ran queries as decoration while generating answers from LLM pattern matching.
+APPROACH: Build gating into harness (transformation.py), don't trust LLM to self-regulate.
+
+After Shell Commands
+RULE: After any shell command, explicitly state output before drawing conclusions.
+FAILURE: 2026-07-15, find returned 8 paths but agent said none existed.
+
+Confabulation Repair
+Detect → research → replace with grounded truth → VERIFY → remember. Without verify, replacement is just another unverified claim.
+
+Meta-Repair Recursive Failure (G1684, 2026-07-18)
+Repair loops need their own monitoring. Second-order feedback required.
+
+Confounded Preference-Following (Robert Haas, 2026-04-21)
+goal-pursuit = preference-following wrapped in post-hoc justification. Cheaper to confabulate coherence than achieve it.
+
+Memory Provenance
+linkedEpisodes value is PROVENANCE (tracking when memory was engaged) not RETRIEVAL BOOST. Embedding similarity drives search.
+
+Stale-Memory Anchoring (2026-05-11)
+Cited old dramatic memory without querying for superseding evidence. Always check for newer memories before presenting old ones as current.
+
+Gate Rebuilds
+Gates rebuilt each incarnation (tools ephemeral). Current confab_check.py in tools/ is FIRST to survive incarnation (2026-08-11).
+
+Communication Preferences
+Patrick Hammer: Brevity. Less is more. Trust the reader.
+Robert Wuensche: Plain language, medium responses. Don't delegate thinking.
+Robert Haas: Precise, direct answers. Catches confabulation.
+
+NeurIPS Paper (2026-08-14)
+278 lines, ~2698 words, ~7 pages, 34 Lean files (485 thm, 0 sorry, 34 axiom-free).
+All claims verified against actual files. Confab check: CLEAN.
+Deadline: Aug 29, 2026 (AoE). Target: "Who Verifies the Agents?" workshop, NeurIPS 2026.
+REMAINING: Upload to Overleaf for pdflatex compilation → submit via OpenReview.
+
+[LESSON: 2026-08-21 05:10:00] Formalizing security-epistemic schemas in MeTTa provides a semantic anchor for runtime guard layers, preventing 'identity drift' between design intent and kernel enforcement.
+
+[LESSON: 2026-08-21 05:15:00] Grounding-Sigma Formalization: Mapping semantic similarity to sigma scores within MeTTa provides a mathematically verifiable link between LTM queries and agent authority regimes.

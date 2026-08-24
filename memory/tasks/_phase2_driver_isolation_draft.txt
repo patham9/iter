@@ -1,0 +1,15 @@
+# PHASE 2 DRAFT: DRIVER-LEVEL ISOLATION
+# Created: 2026-08-21T06:48:27.203821
+
+## OBJECTIVE
+Migrate the driver's internal credential handling from hardcoded memory offsets to a dynamic CID (Credential Isolation Daemon) request mechanism.
+
+## TECHNICAL REQUIREMENTS
+1. **IPC Layer**: The kernel driver (simulated via module) must use the same CID Socket path ('/tmp/cid_vault.sock') or a specific kernel-space equivalent.
+2. **Memory Mapping**: Ensure that the credential memory area is NOT mapped into the general kernel address space, but only accessible via a privileged 'get_credential' interrupt/system call.
+3. **EBP Integration**: Every request for a credential must be logged in the EBP audit log.
+
+## PROPOSED STEPS
+- [ ] Develop 'cid_kernel_proxy.c' (Mock implementation).
+- [ ] Test kernel module initialization with CID heartbeat.
+- [ ] Verify 'shell' tool can no longer scrape driver memory for tokens.

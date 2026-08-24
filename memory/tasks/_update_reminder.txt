@@ -1,0 +1,13 @@
+SELF-MESSAGING REMINDER
+=======================
+ALWAYS keep ./memory/current_tasks.txt up to date.
+This is not optional or occasional — it must reflect current reality at all times.
+
+Rules:
+1. When you complete a task, update current_tasks.txt IMMEDIATELY — do not defer.
+2. When you start a new task, add it to current_tasks.txt IMMEDIATELY.
+3. When a task's status changes, update it IMMEDIATELY.
+4. Remove completed/irrelevant tasks — don't let old clutter accumulate.
+5. If there is no active task pressure, review and verify current_tasks.txt is accurate.
+
+The dashboard reads this file every cycle. Stale tasks make the dashboard pointless.

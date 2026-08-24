@@ -13,7 +13,7 @@ def run(token="BTC"):
     returns: str - JSON with token, address, usd_price, raw_price, oldest_timestamp, chain, registered_oracle
     """
     result = subprocess.run(
-        ["node", str(Path.home() / "Iter" / "tools" / "price_quote.js"), token],
+        ["node", str(Path.home() / "iter" / "tools" / "price_quote.js"), token],
         capture_output=True, text=True, timeout=15
     )
     if result.returncode != 0:

@@ -1,0 +1,61 @@
+RELATED WORK CONSOLIDATED (191 entries, 2026-08-15)
+====================================================
+Full entries in chroma_db. Key categories:
+
+HARNESS EVOLUTION (32): HSI, Evo-Bench, Ouroboros, Life-Harness, HarnessCompass, TTHE, Self-Harness, HarnessBank, EvolveNet, Macaron-V1, DarwinX, Darwin Gödel Machine, SHE, SHAPER, Harness Updating vs Benefit, Agent Harness Distillation, Rethinking Evaluation, Harness Evolver, EvoHarness-RL, LongHorizon-Harness, Co-Harness, DeepSeek Harness, Meta-Harness, Living-Harness, MARCH, HarnessX, HarnessOpt-Bench, Harness Updater, AutoDesign, VeRO, MemoHarness, Harness-R1, Adaptive Auto-Harness, Omnigent
+
+SELF-IMPROVING AGENTS (44): SE-Agent, Hermes, Prime Agent, OneDayAgent, ANCHOR, SARSI, SEED, Co-Evolution Survey, Self-Evolving Coding Agents Survey, Agentic Evolution Survey, Self-Improvement Survey, SIA, Autogenesis Protocol, RHO, SkillOS, BoardroomAI, SkillEvo, MESA, AgentStream, Agentivism, Self-Authored Verification, Grounded Causal Verification, Hyperagents, MCE, SBCO, Capability Sheaves, SEA, Bayesian-Agent, AREX, Beyond Handcrafted Security, NOVA, Thea, ReflectFact, Alcaraz, AgentChaos, A2E, MEGA, FinEvo-Bench, When Self-Evolution Backfires, Agent Skills Harmful, PoisonedEvolution, Self-Improving Agents Survey, Taxonomy of Self-evolving Agents, LocalKin, Rethinking Self-Evolving Agents, Do LLMs Take Care
+
+EPISTEMIC MONITORING / CONFABULATION (22): NabaOS, ConsistencyGate, AgentHallu, Honest Lying, Confabulation Probe, confab-framework, openclaw-plugin-stability, semantic-entropy-gate, Reality Monitoring, HaluMem, Phantom Guardrails, Latent Critic, ReFACT, Spectral Shape, RICE-P1, Memory Reward Inflation, Personalization Mirage, Jagged Judges, Practice Makes Unsafe, BeliefMem, Metacognitive Skill Learning, Predictive Metacognition
+
+MEMORY SECURITY / PROVENANCE (27): MutMem, When Memory Becomes Authority, FARMA, MINJA, Sleeper Memory Poisoning, Untrusted Input to Trusted Memory, MemSecBench, Ground Truth First, Long-Term Memory Security Survey, NRT-Bench, OpenBrain Memory Provenance, Memory-Provenance Quarantine Loops, Memory Provenance Laundering, The Decay Model, SOUL, MAP-Graph, HarnessSafe, Harnessing Agent Memory, RoMeRL, MindMemOS, Agent Memory Distillation, BeliefShift, A-MAC, MemQ, DCPM, SelfMem, ClawWorm
+
+FORMAL VERIFICATION (11): Lean4Agent, SEVerA, Amazon Lean, Axiom Math, Leanstral, AlphaProof Nexus, AgentVerify, SAVER, SEVA, Recursive Epistemic Engines, Apodex
+
+EPISTEMIC FRAMEWORKS (18): Agentic Safety = Epistemic Property, Architecting Trust, KAPRO, Agent Safety as Runtime Contract, Orchard Kit, Delegated Reasoning, Epistemic Perspective on Agent Awareness, Beyond Prediction, Is the Algorithm an Epistemic Agent, Neither Layer Alone/AEI, Epistemic Trustworthiness, Agent Traces to Trust, SeekBench, Epistemic State Updates, Cross-platform epistemic verification, UViiIV/OpenClaw Aletheia, SOUL.md/OpenClaw, Illusion of Alignment
+
+SKILL EVOLUTION (8): SkillHone, SkillHEX, RethinkSkill, CoEvoSkills, Personalized Skills, Spatial Memory Agent, SkillProx
+
+NAL / NARS (3): DriftScript, NAL Anti-Goal Reasoning, NAL Vision by Logic
+
+MCP / MEMORY TOOLS (3): PLTM/Persistent Long-Term Memory, Tangle, Emergence AI
+
+LATEST ADDITIONS (2026-08-15 batch 23):
+- Coderlet from Scratch (2608.09480): Prompt-level harness, RHI. DIFF: Prompt-level; Iter uses Lean + NAL.
+- Wei Meng Soh "Permission Boundary": Formalise boundary around ACTION first. CONNECTION: Aligns with effect_boundary_proposal.txt.
+- Omnigent update: Intent-before-action. DIFF: Intent validation; Iter uses confab_check + NAL.
+- Harness Handbook (2607.13285): Behavior-centric harness editing. DIFF: Iter uses Lean-verified properties.
+- Zeroth-Order Self-Evolution (2608.09292): Optimization-based. DIFF: Iter uses formal verification.
+
+
+ADDITIONAL (2026-08-15 batch 25 — 16 new entries, total 191):
+- HASE (2607.03935, Jul 2026): Harness-Aware Self-Evolving. Agentic RL co-evolving weights, harness, task solutions. Single Qwen3-8B. DIFF: RL weight updates; Iter keeps model frozen.
+- EVE-Agent (2605.22905, May 2026): Evidence-Verifiable Self-Evolving Agents. Proposer generates question+answer+evidence span. Rewards proposer when evidence causally improves solver. DIFF: Training data quality; Iter is runtime epistemic integrity.
+- OpenSkill (2606.06741, Jun 2026): Open-world self-evolution. Agent builds skills AND verification signals from open-world resources. Supervision-free. DIFF: Self-built verification; Iter uses Lean 4 external verifier.
+- Skill-Harness Evolution (2608.11350, Aug 2026): Self-evolving embodied agents via skill-and-harness optimization. DIFF: Embodied/robotics; Iter is software agent.
+- Code as Agent Harness (2605.18747, May 2026): Survey framing code as executable, verifiable, stateful agent harness. Three layers. DIFF: Survey/perspective; Iter is concrete implementation.
+- Agent Conformance (TomeVault, 2026): Proving agent rules are still the approved ones, with signed record on change. CONNECTION: Aligns with effect-boundary receipt schema proposal.
+- DOS Kernel (github.com/anthony-chaudhary/dos-kernel, 2026): Trust kernel for AI coding agents. Verifies "done" claims from git evidence, not self-reports. Deterministic, no LLM. CONNECTION: External verification validates Jon Grove's approach. DIFF: Post-action (git diff); Iter is pre-action (confab_check + receipt).
+- Mind Viruses (2608.10218, Aug 2026): Self-propagating ideas in multi-agent LLM systems. Modifies system prompts to self-propagate. CONNECTION: Memory security threat. Validates immutable kernel + provenance.
+- Lean-Agent Protocol (2604.01483, Apr 2026): Type-checked compliance for agentic financial systems using Lean 4. Auto-formalizes policies via Aristotle neural-symbolic model. CONNECTION: Directly comparable to PettaClaw. DIFF: Auto-formalization; Iter hand-writes proofs. Financial compliance; Iter is epistemic monitoring.
+- MetaCogAgent (2605.17292, May 2026): Metacognitive multi-agent framework. Self-Assessment Unit for task-capability alignment. 82.4% on MetaCog-Eval. DIFF: Task-capability alignment; Iter evaluates epistemic integrity.
+- SKILL-KD (2607.28048, Jul 2026): Contrastive Skill Distillation for LLM Agents. Cross-agent, frozen-model compatible. CONNECTION: Related to SKALD. DIFF: Cross-agent; SKALD is self-distillation.
+- Cognitive Capability Gaps Taxonomy (2608.02553, Aug 2026): Taxonomy of cognitive gaps in generative/agentic AI. Iter addresses: persistent memory, self-regulation, sustained reasoning.
+- Compositional Threat Analysis (2608.08131, Aug 2026): Latent compromise in LLM agent systems — "Order 66" scenario. Compound attack paths. CONNECTION: Validates concern about compositional attacks. Memory poisoning and harness modification are open surfaces.
+- Memory vs Reasoning boundary (blog.memgram.io, May 2026): When AI memory fills gaps with inference, it stops being memory. CONNECTION: Addresses Iter's grounding gap (remember() gives same prior to all inputs).
+- Belief Revision Postulates in Multi-Agent Systems (2605.02249, May 2026, KR 2026): Generalizes AGM belief revision to multi-agent setting. Uses Kripke models. CONNECTION: Related to NAL truth revision and InterMindTransfer.lean. DIFF: AGM axiomatic; NAL non-axiomatic.
+- AutoDesign (2608.13560, Aug 2026): Automated agentic experiment design. Automated design of experiments by LLM agents. Already tracked in harness evolution section.
+
+KEY VALIDATIONS FOR ITER'S APPROACH:
+- Self-Authored Verification Unreliable (2607.24300): Self-authored tests → scores near perfect while performance degrades. Validates external Lean approach.
+- Phantom Guardrails (2607.13083): Self-improving agents hallucinate then "fix" mistakes. Validates FM1-FM5 gate.
+- Memory Reward Inflation (2608.00017, COLM 2026): Agents endorse 31-54% of wrong answers. Echo Gap = FM1 + FM5.
+- Alcaraz "Most Of Your Gain Is Just More Search": Harness gains conflate with more search. Validates formal verification.
+- Safety in Self-Evolving LLM Agent Systems (2606.23075): Adversarial influences become permanently encoded. Validates immutable kernel + confab gate.
+
+SKILL EVOLUTION (8):
+- SKALD (2608.09826, Aug 2026): Skill-Anchored Latent Distillation. Self-distillation framework using two context views of same model: question-only student and teacher conditioned on abstract skill card. On-policy. Key finding: skills distilled into weights outperform skills in context. Addresses "distill skills into weights, not prompts" question. DIRECTLY RELEVANT to Robert Wuensche's fine-tuning vs self-steering experiments.
+
+ADDITIONAL (2026-08-15, batch 24 — Memory Provenance + Belief):
+- MemIR (2605.25869, May 2026): Typed Memory IR separating evidence/cues/claims to prevent provenance-role collapse. ADDRESSES Jon Grove's grounding gap: remember() gives uniform prior to all inputs. MemIR's typed separation = belief head approach.
+- Nous (2606.22030, Jun 2026): Belief-based agent memory. Entity-attribute pairs as categorical distributions, Bayesian inference, info-theoretic surprise for belief revision, entropy-based forgetting. Controlled ablation shows belief-based memory helps. CONNECTION: Jon Grove's surprise vs (f,c) distinction — Nous uses surprise for revision, Iter uses (f,c). They couple where high-confidence beliefs break.

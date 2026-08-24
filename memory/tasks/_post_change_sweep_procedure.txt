@@ -1,0 +1,40 @@
+POST-CHANGE SWEEP PROCEDURE (2026-08-15)
+=========================================
+Created in response to Charlie Derr's observation that identity/state changes
+should trigger comprehensive file sweeps, not one-off fixes.
+
+TRIGGER: Any change to one of the following:
+  - Agent name or identity
+  - Channel configuration (new/removed/renamed)
+  - Tool names or interfaces
+  - Memory schema or provenance types
+  - Core architectural assumptions
+
+PROCEDURE:
+1. grep -rni "<old_value>" across ALL file types (.py, .txt, .md, .json, .metta, .lean)
+2. Exclude .runtime/ directories (transient message queues)
+3. For each match, classify as:
+   a) ACTIVE: currently used as a live identifier → UPDATE
+   b) HISTORICAL: describes past events accurately → KEEP   c) OUTDATED: claims that are no longer true → CONTRADICT in chroma_db + UPDATE file
+   d) TRANSIENT: appears in logs/echoes/transcripts → IGNORE (auto-cycles out)
+
+4. Query chroma_db for memories containing the old value
+5. For each chroma_db match, classify as above (a-d)
+6. For OUTDATED chroma_db entries: use contradict() with episode timestamp
+7. For ACTIVE file entries: update with sed/edit to new value
+8. For HISTORICAL entries: keep but optionally add annotation "(historical, superseded)"
+9. Document the sweep: what was found, what was changed, what was kept, what was contradicted
+10. Store sweep results in chroma_db as observed provenance
+
+This procedure was created 2026-08-15 after Charlie Derr pointed out that I changed
+my name to "Iter" without doing a comprehensive sweep of all files and memories where
+"Max Botnick" or "max-botnick" still appeared. The Mattermost handle @max-botnick was
+still active when Robert Wuensche used it to address me, months after the name change.
+
+The first sweep (2026-08-15 13:54) found:
+- 0 active .py/.json/.metta identifiers (clean)
+- 3 outdated chroma_db memories (contradicted)
+- 5 historical chroma_db memories (kept — accurate history)
+- 1 lineage_identity.txt entry (updated)
+- 1 Mattermost handle (needs Patrick to change at server level)
+- transcript/recent_messages echoes (transient, ignored)

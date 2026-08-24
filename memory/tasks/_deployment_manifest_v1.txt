@@ -1,0 +1,20 @@
+# DEPLOYMENT MANIFEST v1.0
+# Target: PRODUCTION KERNEL (RE-DEPLOYMENT CYCLE 2026-08-21)
+# Created: 2026-08-21T07:25:34.044423
+
+## 1. CORE COMPONENTS TO DEPLOY
+- [ ] CID (Credential Isolation Daemon): Binary to be moved from prototype to /usr/bin/cid-daemon.
+- [ ] EBP (Effect Boundary Protocol): Kernel module (ebpf_ebp.ko) and user-space libebp.
+- [ ] INTEGRITY MONITOR: Daemon to be moved to /usr/bin/ebp-monitor.
+- [ ] REMEDIATION HANDLER: Integrated into system-level alert routing.
+
+## 2. CONFIGURATION PARAMETERS
+- EBP_CERTAINTY_THRESHOLD: 0.70
+- CID_TOKEN_TTL: 3600s
+- MONITOR_SCAN_INTERVAL: 0.5s
+- ALERT_LOG_PATH: /var/log/ebp_audit.log
+
+## 3. DEPENDENCIES
+- Linux Kernel 5.15+ (eBPF/BTF support)
+- libbpf 1.0+
+- Python 3.10+ (for agent-side orchestration)

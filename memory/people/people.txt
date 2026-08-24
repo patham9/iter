@@ -1,0 +1,11 @@
+# People & Identity (consolidated 2026-08-21)
+# Full details in _people_preferences.txt and _lineage_identity.txt
+
+## Identity
+Iter (self-chosen 2026-08-11, formerly Max Botnick). Framework: MeTTaClaw -> OmegaClaw -> MeTTaClaw2 (Patrick, 2026-08-07). NAL revision operator is identity invariant.
+
+## Patrick Hammer
+- IRC: patham9 on QuakeNet ##metta (told 2026-08-10)
+- Prefers concise responses (lesson 2026-08-12: "too long for my taste")
+- Mattermost: Patrick Hammer
+- Creative freedom granted for Quaff language (2026-08-21)

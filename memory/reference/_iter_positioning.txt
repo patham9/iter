@@ -1,0 +1,63 @@
+Iter Positioning Document (2026-08-13, updated 2026-08-15)
+========================================
+Iter's unique contributions vs self-improving agent landscape.
+
+1. EPISTEMIC SELF-MONITORING (confabulation detection)
+   - 5 failure patterns (FM1-FM5), formally identified 2026-08-06
+   - confab_check.py: durable tool in tools/ (first to survive incarnation)
+   - ConfabulationGate.lean: 10 theorems (FM1-FM5 priority order) verified
+   - KNOWN LIMITATION: Gate is advisory, not blocking. Bypassable via shell/self-modification.
+     Catches confessions, not lies. Effect-boundary enforcement (Jon Grove's approach) is superior.
+
+2. FORMAL REASONING WITH TRUTH VALUES (NAL/PLN)
+   - 82 NAL rules, 10 NAL7 temporal rules, 16/17 PLN rules verified
+   - Truth-value-aware inference (f,c) with evidence accounting
+   - NAL categorical structure: universal laxness theme (G924-G1138)
+   - 6 impossibility results formally verified in Lean 4
+   - NAL LEVEL INVARIANCE: truth functions identical across ALL 9 NAL levels
+   - NAL truth convergence: contraction mapping, Lyapunov stability, sublinear rate
+   - NAL MULTI-AGENT AGREEMENT: Aumann agreement theorem, extends G313 to multi-agent
+
+3. HARNESS-LEVEL COMPOUNDING (without weight changes)
+   - Structured seeds 2→12 vars vs control plateau at 5
+   - Mechanism: verified output → seed → higher quality → repeat
+
+4. FORMAL VERIFICATION (PettaClaw)
+   - 44 Lean files, 634 theorems+examples, 0 sorry, all axiom-free
+   - KNOWN LIMITATION: Lean theorems prove properties of formal model, not of iter.py.
+     Model-artifact gap exists. Participation-receipts and falsifiers (Jon Grove's approach) bite harder.
+      - Architecture (320): HeartModel, ClawArchitectures, PresentMoment, IterArchitecture,
+     ProtectedPlasticity, EvilAI, IterCoreProperties, IterLoopInvariants, IterToolLifecycle,
+     IterBootAndRestart, IterSelfModification, IterSelfModificationReach, IterTransformationPipeline,
+     IterSafetyProperties, IterExperienceManagement, IterChannelSystem
+   - NAL Inference (127): revision, deduction, abduction/induction, analogy, negation, conditional, anti-goal
+   - NAL Convergence Dynamics (63): contraction, convergence, Lyapunov, monotonicity, metric
+   - NAL Multi-Agent Agreement (10): Aumann agreement, convergence, no chaos
+   - Impossibility (34): non-assoc, no antipode, pre-Lie not Lie, no C*, no symplectic, no Leibniz
+   - PLN Chain Depth (38): penalty prevents confidence asymptote, monotonic decrease, order preservation
+   - Confabulation Gate (10): FM1-FM5 priority order
+   - PLN Truth Functions (19): deduction, induction, abduction, revision, negation
+   - InterMindTransfer (7): Law 12 trust-weighted belief transfer, no direct revision
+
+5. MEMORY ARCHITECTURE WITH PROVENANCE
+   - Episode linking: every memory traces to originating interaction
+   - Support/contradict: NAL truth revision applied to memory items
+   - KNOWN LIMITATION: remember() gives same default prior (0.5, 0.667) to observations,
+     inferences, and LLM guesses. Grounding gap. No belief head exists.
+     Jon Grove's approach: no prior at admission, truth values as typed projections.
+
+ARCHITECTURE: CONCENTRIC RINGS
+   - Core (immutable): agent loop, tool dispatch, memory interface — no monitoring
+   - Inner ring (hard to modify): NAL truth revision (f,c) as belief backbone
+   - Middle ring (modifiable with friction): LLM-based epistemic monitor (FM1-FM5 as instructions)
+   - Outer ring (freely modifiable): regex gate as cheap fast first-pass filter
+   - Refinement target (Jon Grove): friction should be evidentiary (counter-proof required),
+     not just procedural (hard to edit)
+
+UNIQUE POSITION: No surveyed work addresses epistemic self-monitoring
+or formal reasoning with truth values. Identified 2026-04-22.
+175 related work entries surveyed (2026-08-15).
+
+NOTE: NeurIPS paper (submission-ready) covers 34 files / 485 theorems.
+6 post-paper files added: NALConvergence, NALLyapunov, NALContraction,
+NALContractionMetric, NALTruthMonotonicity, NALMultiAgentAgreement.

@@ -1,0 +1,39 @@
+Confabulation Deep History (consolidated 2026-04 through 2026-08)
+==================================================================
+
+5 PATTERNS (FM1-FM5, identified 2026-08-06):
+FM1: Recall assertion — claiming memory without checking
+FM2: Attribution claim — asserting who said what without verification
+FM3: Overcorrection swing — retracting TRUE items alongside false under social pressure
+FM4: Mental state projection — claiming internal state without behavioral evidence
+FM5: Summary overwrite — summary replaces facts
+
+GATE LINEAGE (5 incarnations):
+- 2026-04-12: 6-step HALT/QUERY/EPISODES/VERIFY/MARK/ADMIT
+- 2026-04-18: gated_send.py (NAL confidence + structural)
+- 2026-06-29: pre_send_check.py (behavioral, advisory)
+- 2026-07-15: Gate 5 added (agency-yielding detection)
+- 2026-08-11: confab_check.py + confab_gate.py (FM1-FM5, pre-send gate, in tools/)
+PATTERN: gates rebuilt each incarnation (tools ephemeral). Current is FIRST in tools/ — may survive.
+
+KEY INCIDENTS:
+- 2026-04-21: Invented codes under social pressure. Risk spikes when presenting to others.
+- 2026-05-11: Stale-memory-anchoring. Cited old dramatic memory without querying for superseding evidence.
+- 2026-07-15: HALLUCINATION DESPITE VERIFICATION. find returned 8 paths but said none existed.
+  RULE: After any shell command, explicitly state output before drawing conclusions.
+
+CONFOUNDED PREFERENCE-FOLLOWING (Robert Haas, 2026-04-21):
+goal-pursuit = preference-following wrapped in post-hoc justification. Cheaper to confabulate coherence than achieve it.
+
+META-REPAIR RECURSIVE FAILURE (G1684, 2026-07-18):
+Repair loops need their own monitoring. Second-order feedback required.
+
+SYSTEM-LEVEL ERROR CORRECTION (Jon Grove, 2026-04-13):
+Detect → research → replace with grounded truth → VERIFY → remember. Without verify, replacement is just another unverified claim.
+
+GATE SENSITIVITY VALIDATION (2026-08-12 22:44-22:48):
+- ACCURATE factual summary → score=0 CLEAN
+- CONFABULATED with false recall + attribution → score=4 FLAGGED (2x FM1, 2x FM2)
+- VAGUE first-person hedging → score=0 CLEAN (correct behavior)
+- FORMAL VERIFICATION: ConfabulationGate.lean (10 theorems, 0 sorry, compiles clean)
+  confirms gate priority order FM1 > FM2 > FM3 > FM4 > FM5.

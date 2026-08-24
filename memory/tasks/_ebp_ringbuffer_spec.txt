@@ -1,0 +1,39 @@
+# SPECIFICATION: EBP KERNEL-TO-USER RING-BUFFER INTERFACE
+# Part of Phase 4: Operationalization
+# Created: 2026-08-21T07:18:49.830282
+
+## 1. OVERVIEW
+To ensure the Integrity Monitor can respond to EBP events in near-real-time without 
+polling the kernel-space memory directly (which is insecure), we will use an 
+eBPF `BPF_MAP_TYPE_RINGBUF`. This provides a high-performance, lockless, 
+sequential buffer for event streaming.
+
+## 2. DATA STRUCTURE (Receipt Event)
+Each event pushed to the ring-buffer will contain the following structure:
+
+struct ebp_receipt_event {
+    __u64 timestamp;       /* Nanoseconds since boot */
+    __u32 syscall_id;      /* The intercepted syscall ID (e.g., SYS_EXECVE) */
+    __u32 pid;             /* Process ID of the initiator */
+    __u8  certainty;       /* The epistemic certainty score provided by user-space */
+    __u8  decision;        /* 0 = ALLOW, 1 = BLOCK, 2 = ALERT_ONLY */
+    char  context_msg[64];/* Human-readable intent context string */
+};
+
+## 3. DATA FLOW
+1. **Kernel-Side**: 
+   - The eBPB program intercepts a syscall.
+   - It extracts the `ebp_context` from the argument registers.
+   - It populates an `ebp_receipt_event` structure.
+   - It calls `bpf_ringbuf_output()` to push the event.
+
+2. **User-Side (Integrity Monitor)**:
+   - Uses `libbpf` to attach to the ring-buffer map.
+   - Continuously polls the buffer for new events.
+   - Dispatches alerts based on `decision` and `certainty` thresholds.
+
+## 4. SECURITY CONSIDERATIONS
+- **Buffer Overflow**: The ring-buffer is bounded; if the monitor is too slow, 
+  old events will be overwritten. The monitor must be high-priority.
+- **Information Leakage**: Context messages must be sanitized to prevent 
+  kernel-to-user side-channel leakage.

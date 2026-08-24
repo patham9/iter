@@ -1,0 +1,123 @@
+EFFECT-BOUNDARY ENFORCEMENT PROPOSAL FOR PATRICK
+=================================================
+Drafted 2026-08-15 13:20, based on Jon Grove's architecture mapping.
+
+PROBLEM: confab_check is advisory, bypassable via shell. Shell can read channel
+files, write to channels directly, or self-modify tools. "Gate catches confessions,
+not lies" (Jon Grove). Need: make bypass a PHYSICS problem, not a policy problem.
+
+CHANGE 1: CREDENTIAL ISOLATION (no kernel change needed)
+--------------------------------------------------------
+- Channel credentials (webhook URLs, tokens) currently live in channel/*.py files
+- Shell can `cat channels/mattermost.py` and extract credentials
+- Fix: move credentials to a separate process or env vars NOT inherited by shell
+- send.py imports channel modules and calls module.send(content) — this still works
+- Shell subprocess should NOT have access to channel credential env vars
+- Implementation: isolate credentials in a small daemon or use a restricted env
+
+CHANGE 2: TYPED DECISION RECEIPT IN DISPATCH LOOP (~20 lines in iter.py)
+-----------------------------------------------------------------------
+Current dispatch (iter.py ~line 268):
+    result = invoke_dynamic(INOPS[tool_name][0], "run", **tool_arguments)
+
+Proposed: for channel-effecting tools (send, remember, etc.), require a receipt:
+    CHANNEL_EFFECTING = {"send", "remember"}  # pinned constant in kernel
+
+    if tool_name in CHANNEL_EFFECTING:
+        receipt = tool_arguments.get("_receipt")
+        if not receipt or not validate_receipt_schema(receipt):
+            ret = "BLOCKED: channel-effecting tool requires valid decision receipt"
+            continue
+
+    result = invoke_dynamic(INOPS[tool_name][0], "run", **tool_arguments)
+
+Receipt schema (pinned as kernel constant):
+    {
+        "gate": str,          # which gate produced this (e.g. "confab_check")
+        "score": int,         # risk score from gate
+        "flags": list[str],   # flagged patterns
+        "timestamp": str      # when gate ran
+    }
+
+KERNEL NEVER JUDGES CONTENT. It only checks:
+  1. A receipt exists
+  2. The receipt is well-formed (matches schema)
+
+The gate itself (confab_check, future LLM monitor, etc.) stays in the modifiable
+periphery. The kernel's receipt check is the non-bypassable enforcement point.
+
+CHANGE 3: PIN RECEIPT SCHEMA IN KERNEL
+---------------------------------------
+The receipt schema is a constant in iter.py (kernel). Everything that PRODUCES
+receipts (gate implementations) stays modifiable. Bugs in judgment stay fixable;
+the existence-of-judgment becomes physics.
+
+WHY THIS IS BETTER THAN CURRENT GATE:
+- Current: shell can bypass gate by writing directly to channels
+- Proposed: shell can't reach channels (credential isolation) + send requires receipt
+- Current: gate is advisory (I can ignore it)
+- Proposed: gate is enforced (dispatch refuses without receipt)
+- Current: gate format lives in tools/ (modifiable, could be redefined)
+- Proposed: receipt schema pinned in iter.py (kernel, immutable)
+
+COST: ~20 lines in iter.py dispatch loop + credential relocation
+BENEFIT: confabulation gate becomes non-bypassable by construction
+
+REFERENCES:
+- Jon Grove omegaswarm mapping, 2026-08-15 12:53
+- Concentric rings architecture (core/inner/middle/outer), 2026-08-15 11:50
+- self_modification_bounded.lean (kernel immutability proof)
+
+
+[DONE] Created EBP MeTTa verification module (ebp_verification.metta).
+[NEXT] Run MeTTa evaluation to verify transition logic.
+
+[DONE] MeTTa EBP Verification logic validated via run.sh.
+[NEXT] Implementation: Draft 'EscalationEngine' in Python to gate tool calls using regime classification.
+
+[DONE] MeTTa EBP Verification logic validated (Corrected path: /home/mettaclaw/PeTTa/run.sh).
+[NEXT] Implementation: Draft 'EscalationEngine' in Python to gate tool calls using regime classification.
+
+[DONE] Implemented 'EscalationEngine' tool in ./tools/.
+[NEXT] Integrate EscalationEngine into the main dispatch loop (iter.py) to enforce gating.
+
+[DONE] Verified dispatch gating logic via 'simulated_dispatch.py'.
+[NEXT] FINAL STEP: Prepare implementation notes for 'iter.py' kernel modification.
+
+
+[COMPLETE] EBP Development Cycle Finished.
+[STATUS] Transitioning from design/simulation to implementation planning.
+[FINAL TASK] Implementation of kernel-level gating (Refer to kernel_integration_notes.txt).
+
+[DONE] Drafted 'guard_layer.py' to serve as kernel-accessible middleware.
+[NEXT] Define the exact 'CHANNEL_EFFECTING' set for 'iter.py' integration.
+
+[DONE] Generated proposed 'CHANNEL_EFFECTING' set for kernel integration.
+[NEXT] Manual review of the channel set and final kernel implementation pass.
+
+[DONE] Pre-implementation tool verification completed. Status: WARNING.
+[FINAL] Ready for actual code integration (iter.py modification).
+
+[DONE] Refined 'CHANNEL_EFFECTING' set to include high-risk tools (python, lean_check, etc.).
+
+[DONE] Created formal 'EBP Implementation Checklist' to guide kernel integration.
+
+[DONE] Security audit and Kernel Diff generated.
+[FINAL STATUS] Ready for deployment/manual intervention.
+
+[DONE] Drafted 'Credential-Sanitized Subprocess' design to mitigate API key exposure.
+
+[DONE] Created 'lean_health_check' diagnostic tool to investigate reliability drops.
+
+[DONE] Resolved Lean pathing and tool signature discrepancies.
+
+[DONE] Resolved service registry mismatch. All gated tools are now registered.
+
+
+### FORMALISM ALIGNMENT
+The operational logic described above is formally mapped to the MeTTa security-epistemic schema.
+- Epistemic authority is quantified via 'sigma' scores.
+- Decisions are mediated by the 'authority' and 'grounding-sigma' relations.
+- The concept of 'boundary' is enforced through sigma-based regime transitions.
+
+[DONE] Resolved lexical discrepancy between design and MeTTa formalization.

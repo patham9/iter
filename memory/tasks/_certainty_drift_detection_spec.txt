@@ -1,0 +1,23 @@
+# SPECIFICATION: CERTAINTY DRIFT DETECTION (PHASE 5.3)
+# Target: Detect and mitigate "Epistemic Overconfidence".
+
+## 1. OVERVIEW
+An agent becomes "overconfident" when its stated certainty score remains high 
+(e.g., > 0.9) while the actual tool success/reliability score (from 
+reliability_dispatcher.py) degrades.
+
+## 2. METRIC: THE EPISTEMIC GAP (EG)
+EG = | Stated_Certainty - Tool_Reliability |
+
+- EG -> 0: Congruent (Healthy)
+- EG -> 1: Drifting (Overconfident or Underconfident)
+
+## 3. DETECTION PROTOCOL
+1. **Sampling**: Every 10 tool calls, sample the (Certainty, Reliability) pair.
+2. **Threshold**: If EG > 0.4 for three consecutive samples, trigger a "DRIFT_ALERT".
+3. **Response**: 
+   - If Overconfident (Certainty > Reliability): Force a "Certainty Penalty" in the next cycle.
+   - If Underconfident (Certainty < Reliability): Log as "Epistemic Conservatism" (low priority).
+
+## 4. IMPLEMENTATION
+- A lightweight tool that reads `tool_reliability.json` and `conversation_log.txt`.

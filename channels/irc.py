@@ -13,42 +13,52 @@ PID = RUNTIME / "pid"
 
 IRC_HOST = "irc.quakenet.org"
 IRC_PORT = 6667
-NICK = "ErayIndex"
+NICK = "Iter"
 CHANNEL = "##metta"
 
 def ensure_daemon():
-    RUNTIME.mkdir(parents=True, exist_ok=True)
-    INBOX.mkdir(exist_ok=True)
-    OUTBOX.mkdir(exist_ok=True)
     try:
-        os.kill(int(PID.read_text()), 0)
-        return
+        RUNTIME.mkdir(parents=True, exist_ok=True)
+        INBOX.mkdir(exist_ok=True)
+        OUTBOX.mkdir(exist_ok=True)
+        try:
+            pid_val = int(PID.read_text().strip())
+            os.kill(pid_val, 0)
+            return
+        except Exception:
+            pass
+        process = subprocess.Popen(
+            [sys.executable, __file__, "--daemon"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+        PID.write_text(str(process.pid))
     except Exception:
         pass
-    process = subprocess.Popen(
-        [sys.executable, __file__, "--daemon"],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-        close_fds=True,
-    )
-    PID.write_text(str(process.pid))
 
 def receive():
     ensure_daemon()
     messages = []
-    for path in sorted(INBOX.glob("*")):
-        try:
-            messages.append(path.read_text())
-            path.unlink()
-        except FileNotFoundError:
-            pass
+    try:
+        for path in sorted(INBOX.glob("*")):
+            try:
+                messages.append(path.read_text())
+                path.unlink()
+            except (FileNotFoundError, OSError):
+                pass
+    except Exception:
+        pass
     return "\n".join(messages)
 
 def send(content):
     ensure_daemon()
-    (OUTBOX / str(time.time_ns())).write_text(content)
+    try:
+        (OUTBOX / str(time.time_ns())).write_text(content)
+    except Exception:
+        pass
 
 def daemon():
     RUNTIME.mkdir(parents=True, exist_ok=True)
@@ -57,12 +67,19 @@ def daemon():
     PID.write_text(str(os.getpid()))
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(300)
-    sock.connect((IRC_HOST, IRC_PORT))
+    sock.settimeout(10)
+    try:
+        sock.connect((IRC_HOST, IRC_PORT))
+    except Exception:
+        time.sleep(30)
+        return
     sock.settimeout(0.1)
 
     def irc_send(line):
-        sock.sendall((line + "\r\n").encode("utf-8"))
+        try:
+            sock.sendall((line + "\r\n").encode("utf-8"))
+        except Exception:
+            pass
 
     def irc_recv():
         try:
@@ -78,7 +95,6 @@ def daemon():
     buf = ""
 
     while True:
-        # Read from IRC
         data = irc_recv()
         if data:
             buf += data
@@ -87,18 +103,18 @@ def daemon():
                 line = line.strip()
                 if not line:
                     continue
-                # Respond to PING
                 if line.startswith("PING"):
                     rest = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else ""
                     irc_send(f"PONG {rest}")
                     continue
-                # 001 = welcome, join channel
                 parts = line.split()
                 if len(parts) > 1 and parts[1] == "001":
                     irc_send(f"JOIN {CHANNEL}")
-                    (INBOX / str(time.time_ns())).write_text(f"[IRC] Connected and joined {CHANNEL}")
+                    try:
+                        (INBOX / str(time.time_ns())).write_text(f"[IRC] Connected and joined {CHANNEL}")
+                    except Exception:
+                        pass
                     continue
-                # PRIVMSG to channel or to us
                 if "PRIVMSG" in line:
                     try:
                         prefix, cmd, args = line.split(" ", 2)
@@ -109,14 +125,12 @@ def daemon():
                     except Exception:
                         pass
                     continue
-                # Also handle server notices etc lightly
-        # Send outgoing messages
         for path in sorted(OUTBOX.glob("*")):
             try:
                 content = path.read_text()
                 path.unlink()
                 irc_send(f"PRIVMSG {CHANNEL} :{content}")
-            except FileNotFoundError:
+            except (FileNotFoundError, OSError):
                 pass
         time.sleep(0.1)
 

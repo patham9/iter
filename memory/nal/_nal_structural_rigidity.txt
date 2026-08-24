@@ -1,0 +1,12 @@
+NAL STRUCTURAL RIGIDITY SUMMARY (Consolidated 2026-08-16)
+========================================================
+
+CORE PRINCIPLE: NAL (Non-Associative Logic) is structurally RIGID (G1012: H1=0, H2=0).
+
+This rigidity implies that observed 'laxnesses' across mathematical structures are not perturbative errors, but intrinsic, topologically-locked properties:
+- G931 (Monad): LAX MONAD (non-associative revision).
+- G934 (Hopf): WEAK BIALGEBRA (no antipode/coassoc failure).
+- G935 (Higher Cat): LAX BICATEGORY (interchange failure).
+- G993 (Lie): PRE-LIE (Jacobi failure).
+
+WARNING: Any attempt to 'correct' these to associative/Lie/C* structures via symbolic decoration or prompt-level parameter tuning will fail to maintain formal consistency. NAL must be operated within its identified structural constraints.

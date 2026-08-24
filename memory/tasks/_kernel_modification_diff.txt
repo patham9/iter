@@ -1,0 +1,18 @@
+# PROPOSED KERNEL MODIFICATION (iter.py)
+# Target: Dispatch Loop Gating (Line 285)
+
+--- ORIGINAL ---
+285: result = invoke_dynamic(INOPS[tool_name][0], "run", **tool_arguments)
+
++++ MODIFIED ---
+285: if tool_name in CHANNEL_EFFECTING:
+286:     regime, action = guard_layer.evaluate_risk(current_certainty_score, tool_name)
+287:     if action == 'EXECUTE':
+288:         result = invoke_dynamic(INOPS[tool_name][0], "run", **tool_arguments)
+289:     elif action == 'VERIFY':
+290:         # Implementation of provenance check
+291:         result = await provenance_check(tool_name)
+292:     else:
+293:         raise EpistemicBlockError(f'Tool {tool_name} gated due to low certainty.')
+294: else:
+295:     result = invoke_dynamic(INOPS[tool_name][0], "run", **tool_arguments)

@@ -1,0 +1,30 @@
+
+# EBP KERNEL INTEGRATION CHECKLIST (UPDATED)
+
+## [x] 1. Finalize CHANNEL_EFFECTING set
+    - [x] Identified side-effect tools (metta, send, python, shell, etc.)
+    - [x] Verified set against tools/ directory.
+    - [x] Refined set to include high-risk execution tools (python, lean_check, etc.)
+
+## [x] 2. Prepare Middleware (guard_layer.py)
+    - [x] Implement 'evaluate_risk' logic.
+    - [x] Implement 'validate_receipt' logic.
+    - [x] Standardize 'run()' interface for tool loader compatibility.
+    - [x] Added grounding placeholder for semantic verification.
+
+## [x] 3. Prepare MeTTa Formalization (ebp_verification.metta)
+    - [x] Define sigma(C) and epsilon thresholds.
+    - [x] Validate transition logic via run.sh.
+    - [x] Resolved Lean 4 environment pathing and signature issues.
+
+## [ ] 4. Kernel Injection (iter.py)
+    - [ ] Identify line 285: `result = invoke_dynamic(INOPS[tool_name][0], "run", **tool_arguments)`
+    - [ ] Insert call to `guard_layer.evaluate_risk(...)`.
+    - [ ] Implement gating (AXIOMATIC -> Run; PROBABILISTIC -> Verify; HYPOTHETICAL -> Block).
+    - [ ] Ensure `CHANNEL_EFFECTING` set is loaded as a constant.
+
+## [ ] 5. Post-Integration Validation
+    - [ ] Verify 'send' command is gated by certainty.
+    - [ ] Verify 'python' command is gated by certainty.
+    - [ ] Verify 'nop' and 'chroma_query' pass through without gating.
+    - [ ] Run 'pre_implementation_verification.log' assessment.

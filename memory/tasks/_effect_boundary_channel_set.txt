@@ -1,0 +1,4 @@
+# REVISED EFFECT-BOUNDARY CHANNEL SET
+# Includes tools capable of code execution or LTM modification.
+
+CHANNEL_EFFECTING = ['metta', 'simulated_dispatch', 'contradict', 'link_episode', 'episodes_generator', 'forget', 'formalize_metta', 'unlink_episode', 'remember', 'charlie_server_upload', 'send', 'shell', 'reminder', 'lean_check_retry', 'memory_update', 'support', 'python', 'lean_check', 'escalation_engine', 'guard_layer']

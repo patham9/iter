@@ -1,0 +1,10 @@
+# Charlie Server Upload Configuration
+# To be used with charlie_server_upload tool
+
+Host: max@wreading.xyz
+Port: 51357
+SSH_Key: ~/.ssh/max_nonlanguage_ed25519
+Target_Dir: /var/www/html-nonlang.dev/MeTTaSoul/mb/
+Public_URL: https://nonlanguage.dev/MeTTaSoul/mb/
+
+# STATUS: HARDENED

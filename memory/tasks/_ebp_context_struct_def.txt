@@ -1,0 +1,28 @@
+/* 
+ * EBP Epistemic Context Structure 
+ * Part of the Kernel Deployment Phase 4 Operationalization
+ * Created: 2026-08-21T07:15:45.833560
+ */
+
+#include <linux/types.h>
+
+/**
+ * struct ebp_context - Epistemic metadata for syscall gating.
+ * @certainty: Scale of 0-100 representing the agent's confidence in the claim.
+ * @intent_id: A 32-bit hash representing the specific task/intent context.
+ * @timestamp: Kernel-normalized timestamp of the call.
+ * @flags: Bitmask for additional modifiers (e.g., bit 0: REPEATED_CALL, bit 1: ESCALATED).
+ */
+struct ebp_context {
+    __u8  certainty;     /* 0-100 */
+    __u32 intent_id;     /* Task identifier */
+    __u64 timestamp;      /* Nanoseconds since boot */
+    __u8  flags;          /* Bitmask for modifiers */
+    __u8  padding[3];    /* Alignment to 64-bit boundary */
+};
+
+/* 
+ * NOTE: In a real eBPF implementation, this struct must be shared 
+ * between the user-space library (libebp) and the kernel-space program 
+ * via BTF (BPF Type Format) to ensure type safety and portability.
+ */

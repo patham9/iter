@@ -1,0 +1,10 @@
+The sensor confirms X - Observation 0|synthetic_test_fragment
+The sensor confirms X - Observation 1|synthetic_test_fragment
+The sensor confirms X - Observation 2|synthetic_test_fragment
+The sensor confirms X - Observation 3|synthetic_test_fragment
+The sensor confirms X - Observation 4|synthetic_test_fragment
+The sensor confirms X - Observation 5|synthetic_test_fragment
+The sensor confirms X - Observation 6|synthetic_test_fragment
+The sensor confirms X - Observation 7|synthetic_test_fragment
+The sensor confirms X - Observation 8|synthetic_test_fragment
+The sensor confirms X - Observation 9|synthetic_test_fragment

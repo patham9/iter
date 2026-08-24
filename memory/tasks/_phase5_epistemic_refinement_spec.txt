@@ -1,0 +1,19 @@
+# SPECIFICATION: EPISTEMIC REFINEMENT LOOP (PHASE 5)
+# Target: Autonomous Belief Revision based on tool outcomes.
+
+## 1. PROBLEM STATEMENT
+Currently, the agent uses fixed certainty scores for tool calls. 
+When a tool returns an error or a 'REJECTED' decision, the agent does not 
+automatically adjust its internal belief in that tool's reliability.
+
+## 2. PROPOSED LOOP (The 'Refinement' Cycle)
+1. **Capture**: Monitor all tool outputs (especially errors/rejections).
+2. **Analyze**: Compare the 'expected outcome' with the 'actual outcome'.
+3. **Update**: If a pattern of failure is detected, update the tool's 
+   reliability score in `memory/config/tool_reliability.json`.
+4. **Notify**: Update the agent's prompt/context to reflect the new confidence levels.
+
+## 3. IMPLEMENTATION STEPS
+- [ ] **Step 5.1: Implement the 'Refinement Monitor' daemon.** (Tails EBP/CID logs).
+- [ ] **Step 5.2: Integrate with NAL (Neural-Symbolic Axiomatic Logic) for belief updates.**
+- [ ] **Step 5.3: Implement 'Certainty Drift' detection to prevent over-confidence.**

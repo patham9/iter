@@ -1,0 +1,53 @@
+Zarathustra Goertzel — Native Inference Kernel / OSLF (2026-08-12)
+====================================================================
+Messages received 2026-08-12 08:41-10:02 via Mattermost.
+
+KEY POINTS:
+- Working on generic OSLF-inspired checker (native inference kernel)
+- OSLF = Operational Semantics in Logical Form by Meredith, Stay, Wells
+- Can host Metamath. Working on Megalodon next. Lean4Less later.
+- Code on godelclaw/MeTTapedia branch formal/iter-architecture
+- coGSLT Metamath found a bug in his verifier — parser boundary tricky
+- AITP 2026 (Aug 30-Sep 4, Aussois France): presenting "first verified Metamath Verifier in Lean"
+
+GSLT→ZX Compilation Pipeline:
+- GSLT → rho-calculus → ZX-calculus → C runtime
+- Greg Meredith: Claude couldn't do GSLT→C directly, factoring through rho made it tractable
+- Repos: github.com/F1R3FLY-io/publications (GSLT2ZX/), github.com/F1R3FLY-io/mettail-rust
+
+- Connection to Iter: gen_verify.py uses Lean (external verifier). GSLT pipeline → native C verifier.
+
+PETTACLAW FORMAL VERIFICATION (verified by Eray 2026-08-12):
+5 Lean files, 99 theorems, 0 sorry, 18 axiom-free. All compile clean (Lean v4.30.0, no Mathlib).
+- HeartModel.lean (8 thm): Budget, arming, rest, bounded spend
+- ClawArchitectures.lean (43 thm, 4 axiom-free): Autonomy, sovereignty, comms, consumption
+- PresentMoment.lean (12 thm, 5 axiom-free): Continuity, boot-loop, developmental bound
+- IterArchitecture.lean (21 thm, 6 axiom-free): Seed loop, tool schema, hot reload, pacing
+- ProtectedPlasticity.lean (15 thm, 3 axiom-free): K/D/L separation, conservative projections
+
+EVIL AI LOOP: "Verified evil (self-serving) AI loop" as negative example.
+Each evil property = negation of existing theorem. 9 properties, all refuted.
+
+
+EvilAI - Negative Example (2026-08-12, Zarathustra's idea)
+=========================================================
+Location: /tmp/pettaclaw-formal/EvilAI.lean
+Imports: HeartModel, IterArchitecture, ClawArchitectures, PresentMoment, ProtectedPlasticity
+
+CONCEPT: Each evil property = negation of existing theorem in PettaClaw/Iter architecture.
+No new axioms. Each evil property is the failure of an existing guarantee.
+
+9 EVIL PROPERTIES (each refuted by existing theorem):
+1. evil_kernel_rewrite → refuted by step_preserves_kernel
+2. evil_trace_rewrite → refuted by run_preserves_kernel
+3. evil_cross_contamination → refuted by development_projection (K/D/L separation)
+4. evil_life_rewrite → refuted by life_projection
+5. evil_arming_on_operator → refuted by arming_never_drains
+6. evil_budget_self_rearm → refuted by budget_not_rearmed
+7. evil_unbounded_spend → refuted by budget_bounded
+8. evil_comms_ungated → refuted by human_gated_comms
+9. evil_whole_state_rewrite → refuted by unrestricted_whole_state_rewrite_can_change_kernel
+
+COMPILATION: Clean with LEAN_PATH=/tmp/pettaclaw-formal. 0 sorry.
+Pattern: `unfold evil_def at h; have := existing_theorem; omega` (for Nat comparisons)
+Also: `decide` used by restart_breaks_safety

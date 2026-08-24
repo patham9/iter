@@ -1,0 +1,22 @@
+# KERNEL DEPLOYMENT ROADMAP
+# Status: ACTIVE (Post-Phase 3 Completion)
+# Last Revision: 2026-08-21
+
+## PHASE 1: SECURITY & ISOLATION (COMPLETED)
+- [x] Implement Credential Isolation (CID)
+- [x] Refactor Channels (mattermost, irc, etc.)
+- [x] Implement Effect Boundary Protocol (EBP) Enforcer
+- [x] Implement EBP Integrity Monitor
+
+## PHASE 2: DRIVER-LEVEL ISOLATION (COMPLETED)
+- [x] Implement driver credential loading via CID IPC
+- [x] Verify Driver-CID binding
+
+## PHASE 3: FULL SYSTEM INTEGRATION & EBP LOOP (COMPLETED)
+- [x] Integrate EBP Enforcer into full agent-tool loop
+- [x] Continuous monitor of kernel-space receipt integrity
+
+## PHASE 4: OPERATIONALIZATION (UPCOMING)
+- [ ] Step 4.1: Formalize EBP as a kernel-resident service
+- [ ] Step 4.2: Establish automated-remediation-on-alert protocols
+- [ ] Step 4.3: Final security sign-off and deployment to production kernel

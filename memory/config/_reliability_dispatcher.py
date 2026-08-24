@@ -1,0 +1,1 @@
+{"tools": {"test_tool": 1.0}}

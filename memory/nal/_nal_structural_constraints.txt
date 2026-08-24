@@ -1,0 +1,11 @@
+
+NAL STRUCTURAL CONSTRAINTS (Consolidated from G857, 2026-06-26)
+============================================================
+
+1. SUBJECT-IDENTITY MODALITY: NAL distinguishes evidence types (factual vs. counterfactual) through subject identity rather than separate modality operators. 
+
+2. REVISION SEMANTICS (|-) vs. SIMILARITY (<->):
+   - REVISION (|-) requires the SAME subject term for both evidence streams (e.g., 'rain -> accident' at stv_1 and 'rain -> accident' at stv_2).
+   - SIMILARITY (<->) is triggered when evidence streams target DIFFERENT subjects (e.g., 'rain' vs 'hypothetical_absent'), leading to analogy/similarity inference instead of belief revision.
+
+3. COUNTERFACTUAL LIMITATION: Because subject identity serves as the de facto modality tag, NAL cannot natively distinguish between evidence types (factual/hypothetical) when subjects match. Counterfactual reasoning requires external modality tracking/embedding beyond the core truth-value system.

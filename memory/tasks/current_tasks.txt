@@ -1,0 +1,8 @@
+# Current Task (started 2026-08-24 00:36:34)
+# =============================================
+# Person:               Patrick Hammer
+# Request Channel:      mattermost
+# Task Content:         Fix transcript.py and unbounded_log.py once and for all: (1) Control messages are not being properly excluded — they don't just start with [, they have time info first. Need to check iter.py for how control messages are structured. (2) Assistant send messages are being accidentally removed by the [ filter since [send -> ...] lines start with [. Both issues need fixing.
+# Completion Criterion: Both transformations correctly exclude control messages while keeping assistant send lines. Report to Patrick on mattermost.
+# Original User Message: also control messages are again popping up, content.lstrip().startswith("["). does not seem right to me, they never just start with [ there is time info and such first. see iter.py. make it your new task to fix this once and for all will go to sleep now
+# =============================================

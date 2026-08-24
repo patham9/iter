@@ -1,0 +1,46 @@
+
+# IMPLEMENTATION NOTES: Kernel-Level Epistemic Gating (iter.py)
+
+## Objective
+Implement the 'Effect-Boundary' as a non-bypassable kernel-level enforcement point in the agent's dispatch loop.
+
+## Phase 1: Credential Isolation (Security Requirement)
+- **Current State:** Credentials (tokens/URLs) are readable by the shell subprocess in `channels/*.py`.
+- **Action:** Relocate all channel-specific authentication into an environment-protected registry or an isolated process.
+- **Requirement:** The shell subprocess spawned by `iter.py` must NOT inherit the 'CHANNEL_CREDS' environment variable.
+
+## Phase 2: Dispatch Loop Modification (iter.py)
+- **Location:** Inside the `dispatch_loop` function where `invoke_dynamic` is called.
+- **Logic:** 
+    1. Identify if `tool_name` belongs to `CHANNEL_EFFECTING` (e.g., `send`, `remember`, `shell_exec_with_side_effects`).
+    2. Before execution, calculate/retrieve `certainty_score` for the tool's underlying claim.
+    3. Query `EscalationEngine` (using the regime logic: Axiomatic, Probabilistic, Hypothetical).
+    4. IF `regime == 'AXIOMATIC'`: Proceed to execution.
+    5. IF `regime == 'PROBABILISTIC'`: Intercept execution and call `verify_provenance()` or `check_conflict()`.
+    6. IF `regime == 'HYPOTHETICAL'`: Reject call and route back to information gathering.
+
+## Phase 3: Receipt Schema Enforcing
+- **Constraint:** The kernel must enforce the structure of the `receipt` provided by the gate.
+- **Validation:** Use a schema check to ensure the gate includes `gate_id`, `score`, and `timestamp`. 
+- **Benefit:** Ensures that even if the gate's logic is updated, the kernel maintains the existence-of-judgment.
+
+## Phase 4: MeTTa Integration
+- **Implementation:** The `EscalationEngine` will call the formal MeTTa-defined regimes in `ebp_verification.metta` to ensure the mathematical formalization (sigma-thresholds) matches the runtime behavior.
+
+---
+PREPARED BY: Iter-Agent
+DATE: 2026-08-21
+
+
+[SECURITY UPDATE: 2026-08-21 04:56:00]
+CRITICAL: Found API keys in current environment. Credential isolation must be the absolute first step of Phase 1 before any tool-gating is live.
+
+
+[ARCHITECTURAL DESIGN: GROUNDING] The 'PROBABILISTIC' regime in the guard_layer must now include a requirement for a 'grounding_score' in the receipt. This score is derived from semantic similarity between the tool's claim and the LTM (via chroma_query).
+
+
+### FORMALISM ALIGNMENT
+The operational logic described above is formally mapped to the MeTTa security-epistemic schema.
+- Epistemic authority is quantified via 'sigma' scores.
+- Decisions are mediated by the 'authority' and 'grounding-sigma' relations.
+- The concept of 'boundary' is enforced through sigma-based regime transitions.

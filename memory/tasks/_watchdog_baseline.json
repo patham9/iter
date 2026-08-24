@@ -1,0 +1,45 @@
+{
+    "version": "2.0",
+    "status": "transition_complete",
+    "core_mechanisms": {
+        "structural_integrity": {
+            "protocol": "Direct-Match Staleness Sweep",
+            "target": "Subsumption Gaps & Ghost-Atoms",
+            "method": "Primitive match on provenance at_cycle"
+        },
+        "semantic_integrity": {
+            "metrics": [
+                "Coherence (C)",
+                "Grounding (D)"
+            ],
+            "target": "Semantic Drift & Epistemic Hallucinations"
+        }
+    },
+    "decision_matrix": [
+        {
+            "condition": "C < 0.5",
+            "action": "Tier-3: Critical Audit"
+        },
+        {
+            "condition": "C < 0.95 & D >= threshold",
+            "action": "Tier-1: Structural Warning"
+        },
+        {
+            "condition": "C < 0.95 & D < threshold",
+            "action": "Tier-2: Epistemic Alert"
+        },
+        {
+            "condition": "Orchestrator-detected Alert",
+            "action": "Tier-4: Automated-Revision-Sequence"
+        }
+    ],
+    "components": [
+        "watchdog_v2_modules/sweep_logic.metta",
+        "watchdog_v2_modules/decision_engine.metta",
+        "watchdog_v2_modules/grounding_connector.py",
+        "watchdog_v2_modules/interface.metta",
+        "watchdog_v2_modules/metta_bridge.py",
+        "watchdog_v2_modules/watchdog_skill.metta",
+        "watchdog_v2_modules/watchdog_orchestrator.py"
+    ]
+}

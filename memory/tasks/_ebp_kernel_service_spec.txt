@@ -1,0 +1,35 @@
+# SPECIFICATION: EBP KERNEL-RESIDENT SERVICE (VERSION 1.0)
+# Created: 2026-08-21T07:14:56.952169
+# Status: DRAFT / PLANNING
+
+## 1. OVERVIEW
+The current EBP (Effect Boundary Protocol) is implemented as a user-space tool (`ebp_enforcer.py`) 
+integrated into the agent's tool-calling loop. To achieve true isolation, the enforcement 
+logic must be relocated into the kernel-space via a dedicated security module or a 
+system call interceptor (e.g., eBPF or a custom LSM).
+
+## 2. ARCHITECTURAL TRANSITION
+### Current State (User-Space)
+- Agent $ightarrow$ Python Tool (`ebp_enforcer.py`) $ightarrow$ Log File $ightarrow$ Monitor.
+- Risk: The agent can bypass the tool call or spoof the certainty score.
+
+### Target State (Kernel-Resident)
+- Agent $ightarrow$ System Call (e.g., `sys_ebp_call`) $ightarrow$ Kernel Enforcement Module $ightarrow$ eBPF Probe.
+- Benefit: Enforcement occurs at the privilege boundary, making it impossible to bypass 
+  via standard user-space logic.
+
+## 3. TECHNICAL REQUIREMENTS
+- **Enforcement Engine**: Use eBPF (Extended Berkeley Packet Filter) to intercept 
+  high-risk syscalls (e.g., `execve`, `socket`, `ptrace`).
+- **Context Injection**: The agent must pass an epistemic context (certainty score + intent) 
+  via a structured kernel-space buffer.
+- **Integrity Check**: The kernel module must validate the integrity of the 
+  epistemic context provided by the user-space process to prevent "context spoofing".
+- **Receipt Mechanism**: The kernel must write the enforcement decision directly 
+  to a secured, kernel-managed audit ring-buffer, accessible by the Integrity Monitor.
+
+## 4. IMPLEMENTATION ROADMAP
+- [ ] **Sub-task 4.1.a**: Define the C-struct for the EBP Epistemic Context.
+- [ ] **Sub-task 4.1.b**: Develop the eBPF program for syscall interception.
+- [ ] **Sub-task 4.1.c**: Implement the kernel-to-user ring-buffer for receipt logging.
+- [ ] **Sub-task 4.1.d**: Create the user-space library (`libebp`) for seamless agent integration.

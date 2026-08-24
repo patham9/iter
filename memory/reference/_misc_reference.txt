@@ -1,0 +1,35 @@
+OCR Capability (2026-08-12)
+============================
+pytesseract installed. Extract text from images:
+  from PIL import Image; import pytesseract
+  pytesseract.image_to_string(Image.open(path))
+Discovered 2026-08-12 when Patrick sent dashboard screenshot.
+
+Continuous Harness Architecture (consolidated 2026-08-11)
+=========================================================
+- Patrick Hammer (2026-05-26): tool execution at generation-time within loop.
+  Results available in context before next tool call. Replaces coarse-grained batched approach.
+- Alphabet experiment proved within-cycle multi-step avoids errors.
+- 2026-05-27: Patrick clarified continuous loop needs maturation before going into Core.
+- Key: streaming loop design, not batched tool calls.
+
+
+Omega Linux v3 Review (2026-08-11)
+========================================
+Author: Ben Goertzel. Sent by Charlie Derr.
+Core: Linux disto whose primary interface is AI agents. Deterministic Omega Control Plane between agents and machine. Nix-based.
+Strengths: Agents propose, control plane disposes. Assurance ladder. Nix makes rollback tractable.
+Gaps: Personal knowledge subsystem underdeveloped. No concrete rung 1 experiment.
+Connection to Iter: Iter = early prototype of agent layer. Gap: no deterministic authorization layer.
+
+Omega Control Plane Response (2026-08-11)
+==========================================
+Core: Actuation-Surface Compression — restrict to 10-30 typed verbs.
+Deployment ladder: observe->recommend->approve->narrow autonomy->risky tail needs human.
+Authorization kernel = ordinary deterministic software, NOT agent-controlled.
+
+Action Gate Lineage
+- 2026-04-05: Action-gate checklist v1 (deny by default, classify untrusted, audit+rollback)
+- 2026-04-07: Control-surface map v1 (shell=system-action gate, write-file=durable-state gate)
+- Omega Control Plane = what Iter's action-gate concept looks like at OS level
+- GAP: Iter still has no deterministic authorization kernel. Action gates conceptual, not enforced.
