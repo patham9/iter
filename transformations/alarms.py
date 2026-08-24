@@ -1,6 +1,8 @@
 import time
 from pathlib import Path
 
+DESCRIPTION = "Alarm clock handling"
+
 ROOT = Path(__file__).resolve().parent.parent
 ALARMS_DIR = ROOT / "memory" / "alarms"
 

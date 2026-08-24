@@ -9,27 +9,32 @@ import importlib.util
 import signal
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 
 # --------------------------------------------------------------------
 # 0. Configuration:
 # --------------------------------------------------------------------
-LLM_TIMEOUT=30
+MAX_MEMORY_CHARS = 3000 #When memory turns into an index
+LLM_TIMEOUT = 600
+KEEP_REASONING_IN_EPISODE = True
 PRINT_CALLS = False
-MAX_MEMORY_CHARS = 50000
-MAX_TOOL_OUTPUT_CHARS = 10000
-EXPERIENCE_SIZE = 100
+MAX_TOOL_CALLS = 10
+MAX_TOOL_OUTPUT_CHARS = 5000
+MAX_EXPERIENCE_SIZE = 100   #20 percent
+RETAIN_EXPERIENCE_SIZE = 80 #jumps
 MAX_FAST_STEPS = 50
-SLOW_STEP_DELAY = 60
+SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
-RETURN_VALUE_PRESERVE = 2000
+RETURN_VALUE_PRESERVE = 0
+RETURN_VALUE_PRESERVE_MESSAGES = 10
 DEFAULT_DELAY = 0 #default delay added irregard of whether in slow mode
-MAX_TOKENS = 3000
+MAX_TOKENS = 2524
 INIT_WAIT = 10
-MAX_TOOLS = 20
+MAX_TOOLS = 30
 MAX_TOOL_DESCRIPTION_CHARS = 500
 DYNAMIC_TIMEOUT = 5
-MODEL = os.getenv("LLM_MODEL", "ggml-org/gemma-4-26B-A4B-it-GGUF:Q4_0")
+MODEL = os.getenv("LLM_MODEL", "mlx-community/gemma-4-26b-a4b-it-4bit")
 BASE_URL = os.getenv("BASE_URL", "http://192.168.64.1:2277/v1")
 API_KEY = os.getenv("AI_API_KEY", "dummy")
 
@@ -46,7 +51,9 @@ def dynamic_worker():
         spec = importlib.util.spec_from_file_location("_dynamic_" + path.stem, path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        if function == "__tool_metadata__":
+        if function == "__description__":
+            result = str(module.DESCRIPTION)
+        elif function == "__tool_metadata__":
             parameters = inspect.signature(module.run).parameters.values()
             description = str(module.DESCRIPTION)
             if len(description) > MAX_TOOL_DESCRIPTION_CHARS:
@@ -108,7 +115,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "--invoke":
     sys.exit(0)
 
 # --------------------------------------------------------------------
-# 2. Local tool helpers:
+# 2. Runtime helpers:
 # --------------------------------------------------------------------
 def get_current_time():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -136,8 +143,13 @@ def slow_wait_for_input():
             return event_append
     return ""
 
+def save_experience(experience):
+    with open("experience.tmp", "w", encoding="utf-8") as file:
+        json.dump(experience, file, ensure_ascii=False, indent=2)
+    os.replace("experience.tmp", "experience.json")
+
 # --------------------------------------------------------------------
-# 3. Local tools:
+# 3. Dynamic components:
 # --------------------------------------------------------------------
 def load_tools():
     inops = {}
@@ -160,6 +172,18 @@ def native_tools(inops):
         tools.append({"type": "function", "function": {"name": name, "description": description, "parameters": {"type": "object", "properties": { parameter: { "type": "string" } for parameter in parameters }, "required": [parameter for parameter in parameters], "additionalProperties": False}}})
     return tools
 
+def load_transformation_descriptions():
+    entries = []
+    for path in sorted(Path("transformations").glob("*.py")):
+        if path.name.startswith("_"):
+            continue
+        result = invoke_dynamic(path, "__description__")
+        if result["ok"]:
+            entries.append(f"{path.stem}: {result['result']}")
+        else:
+            entries.append(f"{path.stem}: [DESCRIPTION MISSING]")
+    return "\n".join(entries)
+
 def apply_transformation(messages, tools):
     errors = []
     paths = sorted(path for path in Path("transformations").glob("*.py") if not path.name.startswith("_"))
@@ -173,11 +197,6 @@ def apply_transformation(messages, tools):
             errors.append(f"[RUNTIME ERROR in {path}: {type(error).__name__}: {error}. Repair {path} if needed.]")
     return messages, tools, "\n".join(errors)
 
-def save_experience(experience):
-    with open("experience.tmp", "w", encoding="utf-8") as file:
-        json.dump(experience, file, ensure_ascii=False, indent=2)
-    os.replace("experience.tmp", "experience.json")
-
 # --------------------------------------------------------------------
 # 4. Main loop
 # --------------------------------------------------------------------
@@ -186,13 +205,27 @@ try:
         experience = json.load(file)
 except FileNotFoundError:
     experience = []
-client = openai.OpenAI(api_key=API_KEY, base_url=BASE_URL, timeout=LLM_TIMEOUT, max_retries=0)
+SESSION_ID = str(uuid.uuid4())
+client = openai.OpenAI(api_key=API_KEY, base_url=BASE_URL, timeout=LLM_TIMEOUT, max_retries=0, default_headers={"X-APC-Tenant": "iter", "x-session-id": SESSION_ID})
 time.sleep(INIT_WAIT)
 Path("memory").mkdir(exist_ok=True)
 Path("transformations").mkdir(exist_ok=True)
 post_task_mode, autonomous_steps, new_burst, pending_event_append = False, 0, True, ""
+cleanup_interval = MAX_EXPERIENCE_SIZE - RETAIN_EXPERIENCE_SIZE
+cleanup_bucket = len(experience) // cleanup_interval
 while True:
-    experience = experience[-EXPERIENCE_SIZE:]
+    current_bucket = len(experience) // cleanup_interval
+    if current_bucket > cleanup_bucket:
+        for i, old_message in enumerate(experience):
+            if i < len(experience) - RETURN_VALUE_PRESERVE_MESSAGES:
+                if old_message.get("role") == "tool" and len(old_message.get("content", "")) > RETURN_VALUE_PRESERVE:
+                    old_message["content"] = old_message.get("content", "")[:RETURN_VALUE_PRESERVE] + " [TRUNCATED]"
+                for key in ("reasoning", "reasoning_details", "reasoning_content"):
+                    old_message.pop(key, None)
+        cleanup_bucket = current_bucket
+    if len(experience) >= MAX_EXPERIENCE_SIZE:
+        experience = experience[-RETAIN_EXPERIENCE_SIZE:]
+        cleanup_bucket = len(experience) // cleanup_interval
     while experience and experience[0].get("role") == "tool":
         experience = experience[1:]
     history_checkpoint = len(experience) #before user input
@@ -201,46 +234,66 @@ while True:
         print("BEFORE RECEIVE")
         event_append = pending_event_append or receive()
         print("AFTER RECEIVE")
-        temporary_message = []
         if event_append:
             autonomous_steps, new_burst, post_task_mode = 0, False, False
             print("IN FROM CHANNEL " + event_append)
             experience += [{"role": "user", "content": "Step " + get_current_time() + ": " + event_append}]
             save_experience(experience)
             pending_event_append = ""
+            base_temporary_message = []
         elif new_burst:
             post_task_mode, new_burst = True, False
-            temporary_message += [{"role": "user", "content": "Step " + get_current_time() + ": [TASK COMPLETED. DO NOT RE-SEND THE COMPLETED RESPONSE. NOW QUERY FOR AND PICK A TASK BASED ON YOUR GOALS, PREFERABLY MEMORY CONSOLIDATION: FINDING EPISODES WHICH SUPPORT / CONTRADICT LTM ITEMS, LINKING EPISODES, PROMOTING USEFUL MEMORIES]"}]
+            base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [TASK COMPLETED. DO NOT RE-SEND THE COMPLETED RESPONSE BUT SEND IN CASE YOU FORGOT. NOW QUERY FOR AND PICK A TASK BASED ON YOUR GOALS, PREFERABLY MEMORY CONSOLIDATION: FINDING EPISODES WHICH SUPPORT / CONTRADICT LTM ITEMS, LINKING EPISODES, PROMOTING USEFUL MEMORIES]"}]
         elif post_task_mode:
-            temporary_message += [{"role": "user", "content": "Step " + get_current_time() + ": [NO NEW USER INPUT. CONTINUE AUTONOMOUS WORK. DO NOT REPEAT THE PREVIOUS RESPONSE. ONLY USE send FOR GENUINELY NEW INFORMATION OR WHEN USER INPUT IS NEEDED.]"}]
+            base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [NO NEW USER INPUT. CONTINUE AUTONOMOUS WORK. DO NOT REPEAT THE PREVIOUS RESPONSE. ONLY USE send FOR GENUINELY NEW INFORMATION OR WHEN USER INPUT IS NEEDED.]"}]
         else:
-            temporary_message += [{"role": "user", "content": "Step " + get_current_time() + ": [NO ADDITIONAL USER INPUT. CONTINUE THE CURRENT USER TASK.]"}]
+            base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [NO ADDITIONAL USER INPUT. CONTINUE THE CURRENT USER TASK.]"}]
         history_checkpoint = len(experience) #as we want not to loose user input even when exception
+        retry_message = None
         while True:
+            temporary_message = list(base_temporary_message)
+            if retry_message:
+                temporary_message += retry_message
             INOPS, omitted_tools, tool_load_error = load_tools()
             if tool_load_error:
                 temporary_message += [{"role": "user", "content": tool_load_error}]
             if omitted_tools > 0:
                 temporary_message += [{"role": "user", "content": f"[TOOL LIMIT REACHED: {omitted_tools} tools are currently omitted. Consolidate or remove tools if they are needed.]"}]
             TOOLS = native_tools(INOPS)
-            MEMORY = "\n\n".join(path.name + ":\n" + path.read_text().strip() for path in Path("memory").iterdir() if path.is_file() and not path.name.startswith("_"))
-            if len(MEMORY) > MAX_MEMORY_CHARS:
-                omitted = len(MEMORY) - MAX_MEMORY_CHARS
-                MEMORY = MEMORY[:MAX_MEMORY_CHARS] + f"\n[MEMORY TRUNCATED: {omitted} chars omitted, REDUCE MEMORY FILES!]"
-            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt").read().strip() + "\n\n" + "reprogramming.txt:\n" + open("reprogramming.txt").read().strip() + "\n\n" + MEMORY}] + experience + temporary_message
+            TRANSFORMATIONS = load_transformation_descriptions()
+            memory_paths = [path for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts)]
+            memory_contents = [(path, path.read_text(encoding="utf-8", errors="replace").strip()) for path in memory_paths]
+            memory_len = sum(len(content) for _, content in memory_contents)
+            if memory_len <= MAX_MEMORY_CHARS:
+                MARGIN = MAX_MEMORY_CHARS - memory_len
+                MEMORY = f"[{MARGIN} CHARACTERS BELOW MAXIMUM]\n./memory/:\n"
+                MEMORY += "\n\n".join(f"{path}:\n{content}" for path, content in memory_contents)
+            else:
+                DIFF = memory_len - MAX_MEMORY_CHARS
+                MEMORY = "./memory/:\n" + "\n".join(str(path) for path in memory_paths)
+                temporary_message += [{"role": "user", "content": f"[MEMORY FOLDER TOTAL CHARACTER CAPACITY BY FILES NOT BEGINNING WITH _ EXCEEDED BY {DIFF} CHARS. FIX THIS FIRST.]"}]
+            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS)
             if transformation_error:
                 request_messages += [{"role": "user", "content": transformation_error}]
             print("BEFORE LLM")
-            response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice="required", max_tokens=MAX_TOKENS)
-            print("AFTER LLM")
+            response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice="required", max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
+            print("AFTER LLM", response)
             message = response.choices[0].message
+            if message.content:
+                message.content += "\n[NOT DELIVERED TO ANY CHANNEL. IF THIS WAS INTENDED AS COMMUNICATION, USE send.]"
             if message.tool_calls:
+                message.tool_calls = message.tool_calls[:MAX_TOOL_CALLS]
                 break
-            temporary_message += [{"role": "user", "content": "Your previous response was invalid. Do not answer in plain text. Call at least one tool now."}]
+            try:
+                if response.choices[0].finish_reason == "length":
+                    retry_message = [{"role": "user", "content": "[OUTPUT TOKEN LIMIT REACHED. CALL THE REQUIRED TOOL CONCISELY.]"}]
+                else:
+                    retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.content!r}]"}]
+            except:
+                retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.content!r}]"}]
         print(f"RESPONSE {response}\nFINISH_REASON {response.choices[0].finish_reason}\nUSAGE {response.usage}")
-        experience = [{**old_message, "content": old_message.get("content", "")[:RETURN_VALUE_PRESERVE] + " [TRUNCATED]"} if old_message.get("role") == "tool" and len(old_message.get("content", "")) > RETURN_VALUE_PRESERVE else old_message for old_message in experience]
-        experience += [{**{key: value for key, value in message.model_dump(exclude_none=True).items() if key not in ("reasoning", "reasoning_details", "reasoning_content")}, "content": "Step " + get_current_time() + ": [TOOL CALL]"}]
+        experience += [{key: value for key, value in message.model_dump(exclude_none=True).items() if KEEP_REASONING_IN_EPISODE or key not in ("reasoning", "reasoning_details", "reasoning_content")}]
         tool_outputs = []
         for tool_call in message.tool_calls:
             tool_name = tool_call.function.name
@@ -269,8 +322,12 @@ while True:
         save_experience(experience)
         print("Output> " + "\n".join(tool_outputs))
         autonomous_steps = 0 if event_append else autonomous_steps + 1
-        if tool_name == "nop" or autonomous_steps >= MAX_FAST_STEPS:
+        called_nop = any(call.function.name == "nop" for call in message.tool_calls)
+        if called_nop:
             new_burst, autonomous_steps = True, 0
+            pending_event_append = slow_wait_for_input()
+        elif autonomous_steps >= MAX_FAST_STEPS:
+            autonomous_steps = 0
             pending_event_append = slow_wait_for_input()
     except Exception as error:
         print(f"Output> {type(error).__name__}: {error}")
