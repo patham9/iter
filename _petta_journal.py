@@ -46,16 +46,19 @@ def resolve_supersedes(lines):
                 if new_id != "new-id" and old_id != "old-id":
                     superseded.add(old_id)
         out = []
-        current_cluster = None
+        dropping = False
         for line in lines:
-            m = _RE_MEMORY_CLUSTER.match(line.strip()) if "(MemoryCluster" in line else None
-            if m:
-                current_cluster = m.group(1)
-                if current_cluster not in superseded:
+            stripped = line.strip()
+            if stripped.startswith(";;; BEGIN MemoryCluster"):
+                dropping = stripped.rsplit(" ", 1)[-1] in superseded
+                if not dropping:
                     out.append(line)
-            else:
-                if current_cluster is None or current_cluster not in superseded:
+            elif stripped.startswith(";;; END MemoryCluster"):
+                if not dropping:
                     out.append(line)
+                dropping = False
+            elif not dropping:
+                out.append(line)
         return out
     except Exception:
         return lines
