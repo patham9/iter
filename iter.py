@@ -31,6 +31,7 @@ TURN_WATCHDOG_THRESHOLD = MAX_FAST_STEPS - 5  # emit checkpoint reminder at this
 ITER_CHECKPOINT_ENABLED = os.getenv("ITER_CHECKPOINT_ENABLED", "1") == "1"
 CHECKPOINT_TOOL_SNAPSHOT = 5       # number of recent tool calls to include
 CHECKPOINT_OUTPUT_CHARS = 200     # truncate each tool output to this many chars
+CHECKPOINT_DIR = Path("checkpoints")  # root dir for checkpoint files
 SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
 RETURN_VALUE_PRESERVE = 0
@@ -226,6 +227,37 @@ def extract_tier1_checkpoint(experience, autonomous_steps):
         "prompt_hash": prompt_hash,
         "tool_snapshot": snapshot,
     }
+
+# --- M1 Step 1.2: Atomic checkpoint file write (temp+rename) ---
+def write_checkpoint_file(checkpoint_data):
+    """Atomically write checkpoint JSON to checkpoints/<session>/<ts>.json.
+
+    Uses temp-file + os.replace for atomicity. Returns the Path on success,
+    or None on failure (never raises — file write failure must not crash the loop).
+    Per v4 write-ordering: file is written BEFORE any send attempt.
+    """
+    try:
+        session_dir = CHECKPOINT_DIR / checkpoint_data.get("session_id", "unknown")
+        session_dir.mkdir(parents=True, exist_ok=True)
+        # Filename-safe timestamp: 20260904T215400
+        ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+        dest = session_dir / f"{ts}.json"
+        # Avoid collision if two checkpoints land in the same second
+        if dest.exists():
+            dest = session_dir / f"{ts}_{uuid.uuid4().hex[:4]}.json"
+        tmp = session_dir / f"{ts}.json.tmp"
+        tmp.write_text(json.dumps(checkpoint_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(str(tmp), str(dest))
+        return dest
+    except Exception as error:
+        print(f"CHECKPOINT_FILE_WRITE_FAILED: {type(error).__name__}: {error}")
+        # Clean up temp file if it exists
+        try:
+            if 'tmp' in dir() and tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+        return None
 
 # --------------------------------------------------------------------
 # 3. Dynamic components:
@@ -427,9 +459,14 @@ while True:
             # M1 Step 1.1: Tier-1 mechanical checkpoint extraction (flag-guarded)
             if ITER_CHECKPOINT_ENABLED and not send_since_checkpoint:
                 _checkpoint_data = extract_tier1_checkpoint(experience, autonomous_steps)
-                print(f"CHECKPOINT_EXTRACTED: {_checkpoint_data}")
+                _checkpoint_path = write_checkpoint_file(_checkpoint_data)
+                if _checkpoint_path:
+                    print(f"CHECKPOINT_FILE_WRITTEN: {_checkpoint_path}")
+                else:
+                    print("CHECKPOINT_FILE_WRITE_FAILED — will still attempt send in step 1.3")
             else:
                 _checkpoint_data = None
+                _checkpoint_path = None
             autonomous_steps = 0
             pending_event_append = slow_wait_for_input()
     except Exception as error:
