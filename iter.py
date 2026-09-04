@@ -32,6 +32,7 @@ ITER_CHECKPOINT_ENABLED = os.getenv("ITER_CHECKPOINT_ENABLED", "1") == "1"
 CHECKPOINT_TOOL_SNAPSHOT = 5       # number of recent tool calls to include
 CHECKPOINT_OUTPUT_CHARS = 200     # truncate each tool output to this many chars
 CHECKPOINT_DIR = Path("checkpoints")  # root dir for checkpoint files
+CHECKPOINT_CHANNEL = os.getenv("ITER_CHECKPOINT_CHANNEL", "protocosmo2")
 SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
 RETURN_VALUE_PRESERVE = 0
@@ -259,6 +260,54 @@ def write_checkpoint_file(checkpoint_data):
             pass
         return None
 
+# --- M1 Step 1.3: Human-readable checkpoint via normal send path ---
+def format_checkpoint_message(checkpoint_data, checkpoint_path):
+    """Format a human-readable checkpoint summary from Tier-1 data.
+
+    Returns a concise string suitable for sending through the channel.
+    """
+    lines = [
+        f"[CHECKPOINT] Turn budget exhausted after {checkpoint_data.get('step_count', '?')} autonomous steps without a send.",
+    ]
+    snapshot = checkpoint_data.get("tool_snapshot", [])
+    if snapshot:
+        lines.append(f"Last {len(snapshot)} tool calls:")
+        for i, entry in enumerate(snapshot, 1):
+            name = entry.get("tool_name", "?")
+            output = entry.get("output_truncated", "")
+            lines.append(f"  {i}. {name}: {output}")
+    else:
+        lines.append("(no tool calls in snapshot)")
+    if checkpoint_path:
+        lines.append(f"Checkpoint file: {checkpoint_path}")
+    else:
+        lines.append("(checkpoint file write failed — this is the human-readable fallback)")
+    lines.append(f"Session: {checkpoint_data.get('session_id', '?')}")
+    return "\n".join(lines)
+
+def send_checkpoint_message(checkpoint_data, checkpoint_path):
+    """Send a human-readable checkpoint summary via the normal send tool.
+
+    Best-effort: never raises. Returns True on success, False on failure.
+    Per v4 write-ordering this is called AFTER the file write.
+    """
+    try:
+        message = format_checkpoint_message(checkpoint_data, checkpoint_path)
+        result = invoke_dynamic(Path("tools/send.py"), "run",
+                                channel=CHECKPOINT_CHANNEL, content=message)
+        if not result["ok"]:
+            print(f"CHECKPOINT_SEND_FAILED: {result['error']}")
+            return False
+        send_result = result["result"]
+        if send_result != "SUCCESS":
+            print(f"CHECKPOINT_SEND_NONSUCCESS: {send_result}")
+            return False
+        print(f"CHECKPOINT_SENT via channel={CHECKPOINT_CHANNEL}")
+        return True
+    except Exception as error:
+        print(f"CHECKPOINT_SEND_EXCEPTION: {type(error).__name__}: {error}")
+        return False
+
 # --------------------------------------------------------------------
 # 3. Dynamic components:
 # --------------------------------------------------------------------
@@ -463,7 +512,9 @@ while True:
                 if _checkpoint_path:
                     print(f"CHECKPOINT_FILE_WRITTEN: {_checkpoint_path}")
                 else:
-                    print("CHECKPOINT_FILE_WRITE_FAILED — will still attempt send in step 1.3")
+                    print("CHECKPOINT_FILE_WRITE_FAILED — will still attempt send")
+                # M1 Step 1.3: human-readable send via normal tool path
+                send_checkpoint_message(_checkpoint_data, _checkpoint_path)
             else:
                 _checkpoint_data = None
                 _checkpoint_path = None
