@@ -1,3 +1,4 @@
+import copy
 import datetime
 import hashlib
 import inspect
@@ -10,6 +11,7 @@ import importlib.util
 import signal
 import subprocess
 import tempfile
+import threading
 import uuid
 from pathlib import Path
 
@@ -33,6 +35,10 @@ CHECKPOINT_TOOL_SNAPSHOT = 5       # number of recent tool calls to include
 CHECKPOINT_OUTPUT_CHARS = 200     # truncate each tool output to this many chars
 CHECKPOINT_DIR = Path("checkpoints")  # root dir for checkpoint files
 CHECKPOINT_CHANNEL = os.getenv("ITER_CHECKPOINT_CHANNEL", "protocosmo2")
+
+# --- M2 Step 2.1: Threaded LLM call wrapper (flag ITER_CONCURRENCY_ENABLED, default OFF) ---
+ITER_CONCURRENCY_ENABLED = os.getenv("ITER_CONCURRENCY_ENABLED", "0") == "1"
+ITER_PROMOTE_SECONDS = int(os.getenv("ITER_PROMOTE_SECONDS", "30"))
 SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
 RETURN_VALUE_PRESERVE = 0
@@ -308,6 +314,86 @@ def send_checkpoint_message(checkpoint_data, checkpoint_path):
         print(f"CHECKPOINT_SEND_EXCEPTION: {type(error).__name__}: {error}")
         return False
 
+# --- M2 Step 2.1: Threaded LLM call wrapper with deadline T ---
+# Background branch state (populated when ITER_CONCURRENCY_ENABLED)
+_branch_lock = threading.Lock()
+_active_branch = None  # holds BranchState or None
+
+class BranchState:
+    """State for a promoted background LLM call branch (R11: deep copy, R12: separate client)."""
+    def __init__(self, branch_id, branch_client, branch_messages, thread, result_container):
+        self.branch_id = branch_id
+        self.branch_client = branch_client
+        self.branch_messages = branch_messages  # deep copy per R11
+        self.thread = thread
+        self.result_container = result_container
+        self.created_at = time.time()
+        self.completed = False
+
+def _bg_llm_thread_target(llm_client, model, messages, tools, tool_choice, max_tokens, extra_body, result_container):
+    """Thread target for background LLM call; stores result in result_container."""
+    try:
+        response = llm_client.chat.completions.create(
+            model=model, messages=messages, tools=tools,
+            tool_choice=tool_choice, max_tokens=max_tokens, extra_body=extra_body,
+        )
+        result_container["ok"] = True
+        result_container["response"] = response
+    except Exception as e:
+        result_container["ok"] = False
+        result_container["error"] = f"{type(e).__name__}: {e}"
+
+def threaded_llm_call(llm_client, model, messages, tools, tool_choice, max_tokens, extra_body):
+    """LLM call with deadline ITER_PROMOTE_SECONDS.
+
+    Starts the call in a foreground daemon thread with join timeout T.
+    - If the call completes within T: returns (response, None) — identical to direct call.
+    - If T expires: promotes to a background branch with a deep copy of messages (R11),
+      a separate OpenAI client (R12), and branch id bg-<uuid8>. Returns (None, BranchState).
+
+    The original thread continues running (R9: no token waste). The branch's
+    result_container is populated when the thread completes; _active_branch
+    holds the branch for merge-queue integration (step 2.2).
+
+    Flag-off: not called; the existing direct client.chat.completions.create path is used.
+    """
+    result_container = {}
+    thread = threading.Thread(
+        target=_bg_llm_thread_target,
+        args=(llm_client, model, messages, tools, tool_choice, max_tokens, extra_body, result_container),
+        daemon=True,
+    )
+    thread.start()
+    thread.join(timeout=ITER_PROMOTE_SECONDS)
+
+    if thread.is_alive():
+        # Deadline expired — promote to background branch
+        branch_id = f"bg-{uuid.uuid4().hex[:8]}"
+        bg_messages = copy.deepcopy(messages)
+        bg_client = openai.OpenAI(
+            api_key=API_KEY, base_url=BASE_URL,
+            timeout=LLM_TIMEOUT, max_retries=0,
+            default_headers={"X-APC-Tenant": "iter-bg", "x-session-id": SESSION_ID, "x-branch-id": branch_id},
+        )
+        branch = BranchState(
+            branch_id=branch_id,
+            branch_client=bg_client,
+            branch_messages=bg_messages,
+            thread=thread,
+            result_container=result_container,
+        )
+        with _branch_lock:
+            global _active_branch
+            _active_branch = branch
+        print(f"LLM_PROMOTED: branch_id={branch_id} deadline={ITER_PROMOTE_SECONDS}s")
+        return None, branch
+
+    # Call completed within deadline
+    if result_container.get("ok"):
+        return result_container["response"], None
+    else:
+        raise Exception(f"Background LLM call failed: {result_container.get('error', 'unknown')}")
+
 # --------------------------------------------------------------------
 # 3. Dynamic components:
 # --------------------------------------------------------------------
@@ -413,6 +499,7 @@ while True:
             base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [NO ADDITIONAL USER INPUT. CONTINUE THE CURRENT USER TASK.]"}]
         history_checkpoint = len(experience) #as we want not to loose user input even when exception
         retry_message = None
+        _promoted = False
         while True:
             temporary_message = list(base_temporary_message)
             if retry_message:
@@ -440,7 +527,13 @@ while True:
             if transformation_error:
                 request_messages += [{"role": "user", "content": transformation_error}]
             print("BEFORE LLM")
-            response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice="required", max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
+            if ITER_CONCURRENCY_ENABLED:
+                response, _branch = threaded_llm_call(client, MODEL, request_messages, request_tools, "required", MAX_TOKENS, {"enable_thinking": True})
+                if response is None:
+                    _promoted = True
+                    break
+            else:
+                response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice="required", max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
             print("AFTER LLM", response)
             message = response.choices[0].message
             if message.content:
@@ -455,6 +548,8 @@ while True:
                     retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.content!r}]"}]
             except:
                 retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.content!r}]"}]
+        if _promoted:
+            continue
         print(f"RESPONSE {response}\nFINISH_REASON {response.choices[0].finish_reason}\nUSAGE {response.usage}")
         experience += [{key: value for key, value in message.model_dump(exclude_none=True).items() if KEEP_REASONING_IN_EPISODE or key not in ("reasoning", "reasoning_details", "reasoning_content")}]
         tool_outputs = []
