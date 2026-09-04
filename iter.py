@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import inspect
 import json
 import os
@@ -24,6 +25,12 @@ MAX_TOOL_OUTPUT_CHARS = 5000
 MAX_EXPERIENCE_SIZE = 100   #20 percent
 RETAIN_EXPERIENCE_SIZE = 80 #jumps
 MAX_FAST_STEPS = 50
+TURN_WATCHDOG_THRESHOLD = MAX_FAST_STEPS - 5  # emit checkpoint reminder at this step
+
+# --- M1 Step 1.1: Tier-1 mechanical checkpoint (flag-guarded, default ON) ---
+ITER_CHECKPOINT_ENABLED = os.getenv("ITER_CHECKPOINT_ENABLED", "1") == "1"
+CHECKPOINT_TOOL_SNAPSHOT = 5       # number of recent tool calls to include
+CHECKPOINT_OUTPUT_CHARS = 200     # truncate each tool output to this many chars
 SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
 RETURN_VALUE_PRESERVE = 0
@@ -135,6 +142,29 @@ def receive():
             events.append(f"[CHANNEL ERROR in {path}: {type(error).__name__}: {error}. Repair {path} if needed.]")
     return "\n".join(events)
 
+def resume_claimed():
+    """Resume channel claims once at process startup.
+
+    Channels without a recovery hook are ignored. A channel that implements
+    ``resume`` remains responsible for validating that exactly one durable
+    claim exists and for failing closed on ambiguous state.
+    """
+    events = []
+    paths = [path for path in sorted(Path("channels").glob("*.py")) if not path.name.startswith("_")]
+    for path in paths:
+        result = invoke_dynamic(path, "resume")
+        if not result["ok"]:
+            if "AttributeError" in result["error"] and "resume" in result["error"]:
+                continue
+            if "exactly one active request is required for resume" in result["error"]:
+                continue
+            events.append(f"[CHANNEL RECOVERY ERROR in {path}: {result['error']}. Repair {path} if needed.]")
+            continue
+        event = result["result"]
+        if event:
+            events.append("[" + path.stem + "] " + str(event))
+    return "\n".join(events)
+
 def slow_wait_for_input():
     for second in range(SLOW_STEP_DELAY):
         time.sleep(1)
@@ -147,6 +177,55 @@ def save_experience(experience):
     with open("experience.tmp", "w", encoding="utf-8") as file:
         json.dump(experience, file, ensure_ascii=False, indent=2)
     os.replace("experience.tmp", "experience.json")
+
+# --- M1 Step 1.1: Tier-1 mechanical checkpoint extraction ---
+def extract_tier1_checkpoint(experience, autonomous_steps):
+    """Purely mechanical extraction of checkpoint data from the experience list.
+
+    No LLM calls. Returns a dict with: checkpoint_type, session_id, step_count,
+    timestamps, prompt_hash, and a snapshot of the last N tool calls (name +
+    200-char truncated output).
+    """
+    # Map tool_call_id -> tool name from assistant messages
+    tool_call_names = {}
+    for entry in experience:
+        if entry.get("role") == "assistant" and entry.get("tool_calls"):
+            for tc in entry["tool_calls"]:
+                if isinstance(tc, dict):
+                    tool_call_names[tc.get("id")] = tc.get("function", {}).get("name", "?")
+
+    # Collect last N tool-output entries
+    tool_entries = [e for e in experience if e.get("role") == "tool"]
+    recent_tools = tool_entries[-CHECKPOINT_TOOL_SNAPSHOT:]
+
+    snapshot = []
+    for entry in recent_tools:
+        tc_id = entry.get("tool_call_id", "?")
+        name = tool_call_names.get(tc_id, "?")
+        content = entry.get("content", "")
+        truncated = content[:CHECKPOINT_OUTPUT_CHARS]
+        snapshot.append({
+            "tool_call_id": tc_id,
+            "tool_name": name,
+            "output_truncated": truncated,
+        })
+
+    # Prompt hash for provenance
+    try:
+        prompt_text = Path("prompt.txt").read_text(encoding="utf-8", errors="replace")
+        prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()[:16]
+    except Exception:
+        prompt_hash = "unknown"
+
+    return {
+        "checkpoint_type": "tier1_mechanical",
+        "session_id": SESSION_ID,
+        "step_count": autonomous_steps,
+        "timestamp": get_current_time(),
+        "timestamp_iso": datetime.datetime.now().isoformat(),
+        "prompt_hash": prompt_hash,
+        "tool_snapshot": snapshot,
+    }
 
 # --------------------------------------------------------------------
 # 3. Dynamic components:
@@ -210,7 +289,9 @@ client = openai.OpenAI(api_key=API_KEY, base_url=BASE_URL, timeout=LLM_TIMEOUT, 
 time.sleep(INIT_WAIT)
 Path("memory").mkdir(exist_ok=True)
 Path("transformations").mkdir(exist_ok=True)
-post_task_mode, autonomous_steps, new_burst, pending_event_append = False, 0, True, ""
+post_task_mode, autonomous_steps, new_burst = False, 0, True
+send_since_checkpoint = False
+pending_event_append = resume_claimed()
 cleanup_interval = MAX_EXPERIENCE_SIZE - RETAIN_EXPERIENCE_SIZE
 cleanup_bucket = len(experience) // cleanup_interval
 while True:
@@ -236,6 +317,7 @@ while True:
         print("AFTER RECEIVE")
         if event_append:
             autonomous_steps, new_burst, post_task_mode = 0, False, False
+            send_since_checkpoint = False
             print("IN FROM CHANNEL " + event_append)
             experience += [{"role": "user", "content": "Step " + get_current_time() + ": " + event_append}]
             save_experience(experience)
@@ -322,11 +404,32 @@ while True:
         save_experience(experience)
         print("Output> " + "\n".join(tool_outputs))
         autonomous_steps = 0 if event_append else autonomous_steps + 1
+        called_send = any(call.function.name == "send" for call in message.tool_calls)
         called_nop = any(call.function.name == "nop" for call in message.tool_calls)
+        if called_send:
+            send_since_checkpoint = True
+        if (not called_send
+                and autonomous_steps == TURN_WATCHDOG_THRESHOLD
+                and not event_append):
+            # Turn-budget watchdog: the agent is close to exhausting its step
+            # budget without having sent a reply. Inject a checkpoint reminder
+            # so it emits a progress summary via send before the limit.
+            experience += [{"role": "user", "content": (
+                f"[TURN BUDGET WARNING: You are at step {autonomous_steps} of {MAX_FAST_STEPS} "
+                f"without calling send. Call send NOW with a concise progress summary: "
+                f"what you accomplished, what remains, and the current state. "
+                f"Do not wait until the task is fully complete.")}]
+            save_experience(experience)
         if called_nop:
             new_burst, autonomous_steps = True, 0
             pending_event_append = slow_wait_for_input()
         elif autonomous_steps >= MAX_FAST_STEPS:
+            # M1 Step 1.1: Tier-1 mechanical checkpoint extraction (flag-guarded)
+            if ITER_CHECKPOINT_ENABLED and not send_since_checkpoint:
+                _checkpoint_data = extract_tier1_checkpoint(experience, autonomous_steps)
+                print(f"CHECKPOINT_EXTRACTED: {_checkpoint_data}")
+            else:
+                _checkpoint_data = None
             autonomous_steps = 0
             pending_event_append = slow_wait_for_input()
     except Exception as error:
