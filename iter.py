@@ -334,7 +334,15 @@ class BranchState:
         self.completed = False
 
 def _bg_llm_thread_target(llm_client, model, messages, tools, tool_choice, max_tokens, extra_body, result_container):
-    """Thread target for background LLM call; stores result in result_container."""
+    """Thread target for background LLM call; stores result in result_container.
+
+    On exception (R14): if the call was promoted to a background branch
+    (branch_id available in result_container), pushes an error marker
+    (type + bounded message) onto _merge_queue and frees the branch slot.
+    The main loop's drain_merge_queue() surfaces the error as a normal
+    experience entry (R6 single-writer: only the main thread appends to
+    experience, so the marker goes through the queue, not directly).
+    """
     try:
         response = llm_client.chat.completions.create(
             model=model, messages=messages, tools=tools,
@@ -345,6 +353,27 @@ def _bg_llm_thread_target(llm_client, model, messages, tools, tool_choice, max_t
     except Exception as e:
         result_container["ok"] = False
         result_container["error"] = f"{type(e).__name__}: {e}"
+        # R14: push error marker to merge queue and free branch slot
+        branch_id = result_container.get("branch_id")
+        if branch_id:
+            error_marker = {
+                "role": "system",
+                "content": (
+                    f"[BACKGROUND_BRANCH_ERROR] branch_id={branch_id} "
+                    f"error={type(e).__name__}: {str(e)[:500]}"
+                ),
+                "branch": branch_id,
+                "error": True,
+                "error_type": type(e).__name__,
+                "error_message": str(e)[:500],
+            }
+            _merge_queue.put(error_marker)
+            # Free the branch slot if we're still the active branch
+            global _active_branch
+            with _branch_lock:
+                if _active_branch is not None and _active_branch.branch_id == branch_id:
+                    _active_branch = None
+            print(f"BACKGROUND_ERROR: branch_id={branch_id} error={type(e).__name__}: {e}")
 
 def threaded_llm_call(llm_client, model, messages, tools, tool_choice, max_tokens, extra_body):
     """LLM call with deadline ITER_PROMOTE_SECONDS.
@@ -372,6 +401,7 @@ def threaded_llm_call(llm_client, model, messages, tools, tool_choice, max_token
     if thread.is_alive():
         # Deadline expired — promote to background branch
         branch_id = f"bg-{uuid.uuid4().hex[:8]}"
+        result_container["branch_id"] = branch_id  # R14: thread reads this on error to push marker
         bg_messages = copy.deepcopy(messages)
         bg_client = openai.OpenAI(
             api_key=API_KEY, base_url=BASE_URL,
