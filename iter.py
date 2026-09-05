@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import json
 import os
+import queue
 import sys
 import openai
 import time
@@ -394,6 +395,37 @@ def threaded_llm_call(llm_client, model, messages, tools, tool_choice, max_token
     else:
         raise Exception(f"Background LLM call failed: {result_container.get('error', 'unknown')}")
 
+# --- M2 Step 2.2: Merge queue + double drain (R15) + single-writer + tagged entries (R16) ---
+_merge_queue = queue.Queue()  # background→main merge queue (R15)
+
+def drain_merge_queue():
+    """Drain all pending entries from the merge queue into experience (R15).
+
+    Pops all entries non-blocking, ensures each has a "branch" tag (R16),
+    extends experience, and saves. Single-writer: only called from the
+    main loop thread (R6 single-writer discipline).
+
+    Returns the number of entries merged. When the queue is empty (flag off
+    or no active branch), returns 0 and is a pure no-op.
+    """
+    merged = 0
+    while True:
+        try:
+            entry = _merge_queue.get_nowait()
+        except queue.Empty:
+            break
+        if not isinstance(entry, dict):
+            continue
+        # Ensure branch tag is present (R16)
+        if "branch" not in entry:
+            entry["branch"] = "unknown"
+        experience.append(entry)
+        merged += 1
+    if merged > 0:
+        save_experience(experience)
+        print(f"MERGE_DRAINED: {merged} entries from background branch(es)")
+    return merged
+
 # --------------------------------------------------------------------
 # 3. Dynamic components:
 # --------------------------------------------------------------------
@@ -476,6 +508,9 @@ while True:
         cleanup_bucket = len(experience) // cleanup_interval
     while experience and experience[0].get("role") == "tool":
         experience = experience[1:]
+    # M2 Step 2.2: double drain — (a) top of loop before receive() (R15)
+    if ITER_CONCURRENCY_ENABLED:
+        drain_merge_queue()
     history_checkpoint = len(experience) #before user input
     try:
         time.sleep(DEFAULT_DELAY)
@@ -522,6 +557,9 @@ while True:
                 DIFF = memory_len - MAX_MEMORY_CHARS
                 MEMORY = "./memory/:\n" + "\n".join(str(path) for path in memory_paths)
                 temporary_message += [{"role": "user", "content": f"[MEMORY FOLDER TOTAL CHARACTER CAPACITY BY FILES NOT BEGINNING WITH _ EXCEEDED BY {DIFF} CHARS. FIX THIS FIRST.]"}]
+            # M2 Step 2.2: double drain — (b) immediately before building messages (R15)
+            if ITER_CONCURRENCY_ENABLED:
+                drain_merge_queue()
             request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS)
             if transformation_error:
