@@ -40,6 +40,8 @@ CHECKPOINT_CHANNEL = os.getenv("ITER_CHECKPOINT_CHANNEL", "protocosmo2")
 # --- M2 Step 2.1: Threaded LLM call wrapper (flag ITER_CONCURRENCY_ENABLED, default OFF) ---
 ITER_CONCURRENCY_ENABLED = os.getenv("ITER_CONCURRENCY_ENABLED", "0") == "1"
 ITER_PROMOTE_SECONDS = int(os.getenv("ITER_PROMOTE_SECONDS", "30"))
+# --- M3 Step 3.1: BACKGROUND_DEADLINE (R13: bounded background lifetime) ---
+BACKGROUND_DEADLINE = max(2 * ITER_PROMOTE_SECONDS, 300)
 SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
 RETURN_VALUE_PRESERVE = 0
@@ -426,6 +428,45 @@ def drain_merge_queue():
         print(f"MERGE_DRAINED: {merged} entries from background branch(es)")
     return merged
 
+# --- M3 Step 3.1: BACKGROUND_DEADLINE — abandon + marker + slot frees (R13) ---
+def check_background_deadline():
+    """Check if the active background branch has exceeded BACKGROUND_DEADLINE (R13).
+
+    If the branch has been running longer than BACKGROUND_DEADLINE seconds:
+    - its results are discarded (the daemon thread continues but we ignore it);
+    - an abandon marker is queued to _merge_queue with branch id and timing;
+    - the branch slot is freed (_active_branch = None), allowing a new promotion.
+
+    Returns True if a branch was abandoned, False otherwise.
+    Flag-off: never called; _active_branch is always None when flag is off.
+    """
+    global _active_branch
+    with _branch_lock:
+        branch = _active_branch
+        if branch is None:
+            return False
+        elapsed = time.time() - branch.created_at
+        if elapsed <= BACKGROUND_DEADLINE:
+            return False
+        # Branch has exceeded the deadline — abandon it
+        branch_id = branch.branch_id
+        has_result = bool(branch.result_container.get("ok", False))
+        _active_branch = None  # free the slot (R13)
+    # Queue abandon marker (R13: "an abandon marker is queued")
+    abandon_marker = {
+        "role": "system",
+        "content": (
+            f"[BACKGROUND_BRANCH_ABANDONED] branch_id={branch_id} "
+            f"elapsed={elapsed:.1f}s deadline={BACKGROUND_DEADLINE}s. "
+            f"LLM call completed: {has_result}. Results discarded."
+        ),
+        "branch": branch_id,
+        "abandoned": True,
+    }
+    _merge_queue.put(abandon_marker)
+    print(f"BACKGROUND_ABANDONED: branch_id={branch_id} elapsed={elapsed:.1f}s deadline={BACKGROUND_DEADLINE}s llm_completed={has_result}")
+    return True
+
 # --------------------------------------------------------------------
 # 3. Dynamic components:
 # --------------------------------------------------------------------
@@ -508,6 +549,9 @@ while True:
         cleanup_bucket = len(experience) // cleanup_interval
     while experience and experience[0].get("role") == "tool":
         experience = experience[1:]
+    # M3 Step 3.1: check background deadline before drain (R13)
+    if ITER_CONCURRENCY_ENABLED:
+        check_background_deadline()
     # M2 Step 2.2: double drain — (a) top of loop before receive() (R15)
     if ITER_CONCURRENCY_ENABLED:
         drain_merge_queue()
