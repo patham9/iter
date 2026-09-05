@@ -497,6 +497,63 @@ def check_background_deadline():
     print(f"BACKGROUND_ABANDONED: branch_id={branch_id} elapsed={elapsed:.1f}s deadline={BACKGROUND_DEADLINE}s llm_completed={has_result}")
     return True
 
+# --- M3 Step 3.3: Shutdown protocol (R17: SIGTERM/SIGINT stop event, 5s grace, drain, save, exit) ---
+SHUTDOWN_GRACE = int(os.getenv("ITER_SHUTDOWN_GRACE", "5"))
+_shutdown_event = threading.Event()
+
+def _iter_signal_handler(signum, frame):
+    """Signal handler for SIGTERM/SIGINT: set the shutdown event (R17).
+
+    Best-effort: only sets the event; the main loop performs the actual
+    graceful shutdown in graceful_shutdown().
+    """
+    try:
+        sig_name = signal.Signals(signum).name
+    except (AttributeError, ValueError):
+        sig_name = str(signum)
+    print(f"SHUTDOWN_SIGNAL: {sig_name} received, setting shutdown event")
+    _shutdown_event.set()
+
+def _install_signal_handlers():
+    """Install SIGTERM/SIGINT handlers for graceful shutdown (R17).
+
+    Best-effort: if signal installation fails (e.g. not in main thread),
+    logs the error and continues — the loop still checks _shutdown_event
+    which can be set by other means.
+    """
+    try:
+        signal.signal(signal.SIGTERM, _iter_signal_handler)
+        signal.signal(signal.SIGINT, _iter_signal_handler)
+        print("SIGNAL_HANDLERS_INSTALLED: SIGTERM, SIGINT")
+    except (ValueError, OSError) as e:
+        print(f"SIGNAL_HANDLER_INSTALL_FAILED: {type(e).__name__}: {e}")
+
+def graceful_shutdown():
+    """Perform graceful shutdown: wait grace, drain, save, exit (R17).
+
+    Called from the main loop when _shutdown_event is set.
+    - Wait up to SHUTDOWN_GRACE seconds for any active branch to push results.
+    - Drain the merge queue (R15).
+    - Save experience (R6: single-writer — only main thread calls save).
+    - Exit cleanly. Branch threads are daemon threads so they cannot block exit.
+    """
+    print(f"SHUTDOWN: grace={SHUTDOWN_GRACE}s")
+    global _active_branch
+    deadline = time.time() + SHUTDOWN_GRACE
+    while time.time() < deadline:
+        with _branch_lock:
+            branch = _active_branch
+        if branch is None:
+            break
+        # Check if branch thread has completed (ok key present = success or error)
+        if branch.result_container.get("ok") is not None:
+            break
+        time.sleep(0.1)
+    drained = drain_merge_queue()
+    save_experience(experience)
+    print(f"SHUTDOWN_COMPLETE: drained={drained} experience_len={len(experience)}")
+    sys.exit(0)
+
 # --------------------------------------------------------------------
 # 3. Dynamic components:
 # --------------------------------------------------------------------
@@ -564,7 +621,12 @@ send_since_checkpoint = False
 pending_event_append = resume_claimed()
 cleanup_interval = MAX_EXPERIENCE_SIZE - RETAIN_EXPERIENCE_SIZE
 cleanup_bucket = len(experience) // cleanup_interval
+if ITER_CONCURRENCY_ENABLED:
+    _install_signal_handlers()
 while True:
+    # M3 Step 3.3: shutdown check (R17: SIGTERM/SIGINT → stop event → grace → drain → save → exit)
+    if ITER_CONCURRENCY_ENABLED and _shutdown_event.is_set():
+        graceful_shutdown()
     current_bucket = len(experience) // cleanup_interval
     if current_bucket > cleanup_bucket:
         for i, old_message in enumerate(experience):
