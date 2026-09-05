@@ -42,6 +42,8 @@ ITER_CONCURRENCY_ENABLED = os.getenv("ITER_CONCURRENCY_ENABLED", "0") == "1"
 ITER_PROMOTE_SECONDS = int(os.getenv("ITER_PROMOTE_SECONDS", "30"))
 # --- M3 Step 3.1: BACKGROUND_DEADLINE (R13: bounded background lifetime) ---
 BACKGROUND_DEADLINE = max(2 * ITER_PROMOTE_SECONDS, 300)
+# --- M3 Step 3.5: Branch step budget + branch checkpoint queuing (R20) ---
+BRANCH_STEP_BUDGET = int(os.getenv("ITER_BRANCH_STEP_BUDGET", "25"))
 SLOW_STEP_DELAY = 10
 ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
 RETURN_VALUE_PRESERVE = 0
@@ -350,6 +352,13 @@ def _bg_llm_thread_target(llm_client, model, messages, tools, tool_choice, max_t
         )
         result_container["ok"] = True
         result_container["response"] = response
+        # M3 Step 3.5: if promoted, run the branch mini-loop (R20: step budget + checkpoint queuing)
+        branch_id = result_container.get("branch_id")
+        if branch_id:
+            branch_client = result_container.get("branch_client")
+            branch_messages = result_container.get("branch_messages")
+            if branch_client is not None and branch_messages is not None:
+                _bg_branch_mini_loop(branch_id, branch_client, branch_messages, response, result_container)
     except Exception as e:
         result_container["ok"] = False
         result_container["error"] = f"{type(e).__name__}: {e}"
@@ -374,6 +383,113 @@ def _bg_llm_thread_target(llm_client, model, messages, tools, tool_choice, max_t
                 if _active_branch is not None and _active_branch.branch_id == branch_id:
                     _active_branch = None
             print(f"BACKGROUND_ERROR: branch_id={branch_id} error={type(e).__name__}: {e}")
+
+# --- M3 Step 3.5: Background branch mini-loop (R20: branch step budget + checkpoint queuing) ---
+def _bg_branch_mini_loop(branch_id, branch_client, branch_messages, initial_response, result_container):
+    """Background branch mini-loop after promotion (R20: branch step budget + checkpoint queuing).
+
+    Runs up to BRANCH_STEP_BUDGET follow-up steps in the background thread:
+    - Pushes assistant + tool entries to _merge_queue (tagged with branch id).
+    - Makes follow-up LLM calls with branch_client on branch_messages (deep copy, R11).
+    - On step-budget exhaustion: queues Tier-1 checkpoint data to _merge_queue
+      (R20: never writes files directly — the main thread handles file write + send).
+    - On exception in follow-up LLM call: pushes error marker (R14) and frees slot.
+    - On normal completion (no more tool calls): frees slot.
+
+    Flag-off: never called; threaded_llm_call is behind ITER_CONCURRENCY_ENABLED.
+    """
+    global _active_branch
+    response = initial_response
+    branch_steps = 0
+
+    # Load tools once at the start (stateless subprocesses; coherence model: snapshot)
+    inops, _omitted, _tool_errors = load_tools()
+    tools = native_tools(inops)
+
+    while branch_steps < BRANCH_STEP_BUDGET:
+        message = response.choices[0].message
+
+        # Build assistant entry for merge queue (tagged) and branch_messages (untagged)
+        assistant_entry = {key: value for key, value in message.model_dump(exclude_none=True).items()
+                          if KEEP_REASONING_IN_EPISODE or key not in ("reasoning", "reasoning_details", "reasoning_content")}
+        _merge_queue.put({**assistant_entry, "branch": branch_id})
+        branch_messages.append(assistant_entry)
+
+        if not message.tool_calls:
+            break  # No more tool calls — branch is done
+
+        # Execute tool calls (stateless subprocesses)
+        for tool_call in message.tool_calls[:MAX_TOOL_CALLS]:
+            tool_name = tool_call.function.name
+            try:
+                tool_arguments = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError as error:
+                tool_arguments = tool_call.function.arguments
+                ret = f"Invalid tool arguments from model: {error}"
+            else:
+                try:
+                    if tool_name not in inops:
+                        ret = f"Unknown tool: {tool_name!r}"
+                    elif not isinstance(tool_arguments, dict):
+                        ret = "Tool arguments must be a JSON object"
+                    else:
+                        result = invoke_dynamic(inops[tool_name][0], "run", **tool_arguments)
+                        ret = result["result"] if result["ok"] else f"Tool execution failed: {result['error']}"
+                except Exception as error:
+                    ret = f"Tool execution failed: {type(error).__name__}: {error}"
+            ret = str(ret)
+            if len(ret) > MAX_TOOL_OUTPUT_CHARS:
+                ret = ret[:MAX_TOOL_OUTPUT_CHARS] + " [TRUNCATED]"
+            tool_content = "Step " + get_current_time() + ": " + ret
+            _merge_queue.put({"role": "tool", "tool_call_id": tool_call.id, "content": tool_content, "branch": branch_id})
+            branch_messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": tool_content})
+
+        branch_steps += 1
+        if branch_steps >= BRANCH_STEP_BUDGET:
+            break
+
+        # Make follow-up LLM call with branch_client (R12: separate client)
+        try:
+            response = branch_client.chat.completions.create(
+                model=MODEL, messages=branch_messages, tools=tools,
+                tool_choice="required", max_tokens=MAX_TOKENS,
+                extra_body={"enable_thinking": True},
+            )
+        except Exception as e:
+            # R14: push error marker and free slot
+            error_marker = {
+                "role": "system",
+                "content": (
+                    f"[BACKGROUND_BRANCH_ERROR] branch_id={branch_id} "
+                    f"error={type(e).__name__}: {str(e)[:500]}"
+                ),
+                "branch": branch_id,
+                "error": True,
+                "error_type": type(e).__name__,
+                "error_message": str(e)[:500],
+            }
+            _merge_queue.put(error_marker)
+            with _branch_lock:
+                if _active_branch is not None and _active_branch.branch_id == branch_id:
+                    _active_branch = None
+            print(f"BACKGROUND_ERROR: branch_id={branch_id} error={type(e).__name__}: {e}")
+            return
+
+    # Check if we exited due to step budget exhaustion
+    if branch_steps >= BRANCH_STEP_BUDGET:
+        # R20: Queue Tier-1 checkpoint data to main thread (never write files directly)
+        checkpoint_data = extract_tier1_checkpoint(branch_messages, branch_steps)
+        checkpoint_data["branch"] = branch_id
+        checkpoint_data["_checkpoint_payload"] = True
+        _merge_queue.put(checkpoint_data)
+        print(f"BRANCH_CHECKPOINT_QUEUED: branch_id={branch_id} steps={branch_steps}")
+
+    # Free the branch slot (compare-and-swap to avoid racing with deadline check)
+    with _branch_lock:
+        if _active_branch is not None and _active_branch.branch_id == branch_id:
+            _active_branch = None
+    print(f"BRANCH_COMPLETE: branch_id={branch_id} steps={branch_steps}")
+
 
 def threaded_llm_call(llm_client, model, messages, tools, tool_choice, max_tokens, extra_body):
     """LLM call with deadline ITER_PROMOTE_SECONDS.
@@ -408,6 +524,9 @@ def threaded_llm_call(llm_client, model, messages, tools, tool_choice, max_token
             timeout=LLM_TIMEOUT, max_retries=0,
             default_headers={"X-APC-Tenant": "iter-bg", "x-session-id": SESSION_ID, "x-branch-id": branch_id},
         )
+        # M3 Step 3.5: store branch client + messages for mini-loop access (R20)
+        result_container["branch_client"] = bg_client
+        result_container["branch_messages"] = bg_messages
         branch = BranchState(
             branch_id=branch_id,
             branch_client=bg_client,
@@ -455,8 +574,9 @@ def drain_merge_queue():
     Returns the number of entries merged. When the queue is empty (flag off
     or no active branch), returns 0 and is a pure no-op.
     """
-    # Collect all pending entries first so we can do supersede detection
+    # Collect all pending entries, separating checkpoint payloads (R20) from regular entries
     merged_entries = []
+    checkpoint_payloads = []
     while True:
         try:
             entry = _merge_queue.get_nowait()
@@ -464,13 +584,34 @@ def drain_merge_queue():
             break
         if not isinstance(entry, dict):
             continue
+        # R20: detect checkpoint payloads queued by background branch — handle separately
+        if entry.get("_checkpoint_payload"):
+            checkpoint_payloads.append(entry)
+            continue
         # Ensure branch tag is present (R16)
         if "branch" not in entry:
             entry["branch"] = "unknown"
         merged_entries.append(entry)
 
+    # R20: Main thread handles checkpoint file write + send (single-writer discipline)
+    for cp in checkpoint_payloads:
+        cp_data = {k: v for k, v in cp.items() if k not in ("branch", "_checkpoint_payload")}
+        cp_path = write_checkpoint_file(cp_data)
+        if cp_path:
+            print(f"BRANCH_CHECKPOINT_FILE_WRITTEN: {cp_path}")
+        else:
+            print("BRANCH_CHECKPOINT_FILE_WRITE_FAILED — will still attempt send")
+        send_checkpoint_message(cp_data, cp_path)
+        # Add a system marker to experience so the LLM sees the branch checkpoint
+        experience.append({
+            "role": "system",
+            "content": f"[BACKGROUND_BRANCH_CHECKPOINT] branch={cp.get('branch', '?')} steps={cp_data.get('step_count', '?')} file={cp_path}",
+            "branch": cp.get("branch", "unknown"),
+        })
+
     if not merged_entries:
-        return 0
+        save_experience(experience) if checkpoint_payloads else None
+        return len(checkpoint_payloads)
 
     # R16: supersede annotation for duplicate tool calls
     # Build tool_call_id → (tool_name, arguments) from merged assistant entries
