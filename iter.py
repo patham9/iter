@@ -430,17 +430,33 @@ def threaded_llm_call(llm_client, model, messages, tools, tool_choice, max_token
 # --- M2 Step 2.2: Merge queue + double drain (R15) + single-writer + tagged entries (R16) ---
 _merge_queue = queue.Queue()  # background→main merge queue (R15)
 
+def _build_tool_call_map(messages):
+    """Build a map from tool_call_id → (tool_name, arguments) from assistant messages.
+
+    Used by drain_merge_queue for R16 supersede detection.
+    """
+    lookup = {}
+    for entry in messages:
+        if entry.get("role") == "assistant" and entry.get("tool_calls"):
+            for tc in entry["tool_calls"]:
+                if isinstance(tc, dict):
+                    fn = tc.get("function", {})
+                    lookup[tc.get("id")] = (fn.get("name", ""), fn.get("arguments", ""))
+    return lookup
+
 def drain_merge_queue():
     """Drain all pending entries from the merge queue into experience (R15).
 
     Pops all entries non-blocking, ensures each has a "branch" tag (R16),
-    extends experience, and saves. Single-writer: only called from the
-    main loop thread (R6 single-writer discipline).
+    annotates duplicate tool calls with "superseded_by" (R16), extends
+    experience, and saves. Single-writer: only called from the main loop
+    thread (R6 single-writer discipline).
 
     Returns the number of entries merged. When the queue is empty (flag off
     or no active branch), returns 0 and is a pure no-op.
     """
-    merged = 0
+    # Collect all pending entries first so we can do supersede detection
+    merged_entries = []
     while True:
         try:
             entry = _merge_queue.get_nowait()
@@ -451,11 +467,43 @@ def drain_merge_queue():
         # Ensure branch tag is present (R16)
         if "branch" not in entry:
             entry["branch"] = "unknown"
+        merged_entries.append(entry)
+
+    if not merged_entries:
+        return 0
+
+    # R16: supersede annotation for duplicate tool calls
+    # Build tool_call_id → (tool_name, arguments) from merged assistant entries
+    merged_call_lookup = _build_tool_call_map(merged_entries)
+
+    # Build (tool_name, arguments) → first tool-entry index from existing experience
+    existing_call_lookup = _build_tool_call_map(experience)
+    existing_tool_index = {}  # (tool_name, arguments) → index in experience
+    for i, entry in enumerate(experience):
+        if entry.get("role") != "tool":
+            continue
+        tc_id = entry.get("tool_call_id")
+        if tc_id and tc_id in existing_call_lookup:
+            key = existing_call_lookup[tc_id]
+            if key not in existing_tool_index:
+                existing_tool_index[key] = i  # first occurrence only
+
+    # Annotate duplicate tool entries with superseded_by (R16)
+    for entry in merged_entries:
+        if entry.get("role") != "tool":
+            continue
+        tc_id = entry.get("tool_call_id")
+        if tc_id and tc_id in merged_call_lookup:
+            key = merged_call_lookup[tc_id]
+            if key in existing_tool_index:
+                entry["superseded_by"] = str(existing_tool_index[key])
+
+    # Append all entries to experience (R6: single-writer — only main thread)
+    for entry in merged_entries:
         experience.append(entry)
-        merged += 1
-    if merged > 0:
-        save_experience(experience)
-        print(f"MERGE_DRAINED: {merged} entries from background branch(es)")
+    merged = len(merged_entries)
+    save_experience(experience)
+    print(f"MERGE_DRAINED: {merged} entries from background branch(es)")
     return merged
 
 # --- M3 Step 3.1: BACKGROUND_DEADLINE — abandon + marker + slot frees (R13) ---
