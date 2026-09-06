@@ -91,7 +91,7 @@ def dynamic_worker():
     except BaseException as error:
         result_path.write_text(json.dumps({"ok": False, "error": f"Result serialization failed: {type(error).__name__}: {error}"}, ensure_ascii=False))
 
-def invoke_dynamic(path, function, *args, **kwargs):
+def invoke_dynamic(path, /, function, *args, **kwargs):
     result_fd, result_file = tempfile.mkstemp(prefix="iter-result-", suffix=".json")
     payload_fd, payload_file = tempfile.mkstemp(prefix="iter-payload-", suffix=".json")
     try:
