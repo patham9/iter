@@ -10,3 +10,4 @@ memory/
 *.log
 .env
 .DS_Store
+checkpoints/
