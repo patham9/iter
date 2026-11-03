@@ -1,10 +1,9 @@
-import select
-import sys
+import bridge
+DESCRIPTION = "Browser terminal channel"
 
 def receive():
-    if select.select([sys.stdin], [], [], 0)[0]:
-        return sys.stdin.readline().strip()
-    return ""
+    return bridge.receive()
 
-def send(content):
-    print(content)
+def send(message):
+    bridge.send(str(message))
+    return "sent"

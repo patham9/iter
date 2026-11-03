@@ -1,12 +1,13 @@
 #CHANNELS:
 Communication channels are hot-reloaded from channels/*.py and expose receive() and optionally send(content).
-If a channel needs persistent connections or state, it can launch itself as an external daemon/process; see channels/_example.py.
+In this browser version, channels execute inside the same MicroPython runtime. Persistent connections or state should use browser APIs, files, or bridge facilities rather than launching external OS processes; see channels/_example.py.
 #TOOLS:
 You can create tools as .py files in ./tools/. New tools are available in the next agent cycle. Format:
 DESCRIPTION = "How the tool should be described"
 def run():
     # any code
     return VALUE
+Browser-backed tools may use async def run() when awaiting browser/bridge APIs.
 #TRANSFORMATIONS:
 You can create transformations as .py files in ./transformations/ (executed in alphabetical order) to modify messages and tools before each model call. It must expose:
 DESCRIPTION = "What the context transformation does"

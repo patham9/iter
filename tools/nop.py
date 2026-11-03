@@ -1,5 +1,3 @@
-DESCRIPTION = "Perform no action if task is complete and send was already used to report back results, do not re-send!"
-
+DESCRIPTION = "Finish the current task/cycle without sending anything."
 def run():
-    print("NOP")
-    return "SUCCESS"
+    return "done"

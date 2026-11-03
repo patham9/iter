@@ -1,16 +1,8 @@
-import datetime
-import inspect
 import json
 import os
 import sys
-import openai
 import time
-import importlib.util
-import signal
-import subprocess
-import tempfile
-import uuid
-from pathlib import Path
+import bridge
 
 # --------------------------------------------------------------------
 # 0. Configuration:
@@ -34,95 +26,59 @@ INIT_WAIT = 10
 MAX_TOOLS = 30
 MAX_TOOL_DESCRIPTION_CHARS = 500
 DYNAMIC_TIMEOUT = 5
-MODEL = os.getenv("LLM_MODEL", "mlx-community/gemma-4-26b-a4b-it-4bit")
-BASE_URL = os.getenv("BASE_URL", "http://192.168.64.1:2277/v1")
-API_KEY = os.getenv("AI_API_KEY", "dummy")
+CONFIG = json.loads(str(bridge.config()))
+MODEL = CONFIG.get("model") or "z-ai/glm-5.2"
+BASE_URL = (CONFIG.get("base_url") or "https://openrouter.ai/api/v1").rstrip("/")
+API_KEY = CONFIG.get("api_key") or "dummy"
 
 # --------------------------------------------------------------------
 # 1. Dynamic execution:
 # --------------------------------------------------------------------
-def dynamic_worker():
-    path = Path(sys.argv[2])
-    function = sys.argv[3]
-    result_path = Path(sys.argv[4])
-    payload_path = Path(sys.argv[5])
+def dynamic_worker(path, function, *args, **kwargs):
     try:
-        payload = json.loads(payload_path.read_text())
-        spec = importlib.util.spec_from_file_location("_dynamic_" + path.stem, path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        with open(path, "r", encoding="utf-8") as file:
+            source = file.read()
+        module = {"__name__": "_dynamic_" + path.rsplit("/", 1)[-1].rsplit(".", 1)[0], "__file__": path}
+        exec(source, module)
         if function == "__description__":
-            result = str(module.DESCRIPTION)
+            result = str(module["DESCRIPTION"])
         elif function == "__tool_metadata__":
-            parameters = inspect.signature(module.run).parameters.values()
-            description = str(module.DESCRIPTION)
+            marker = "async def run(" if "async def run(" in source else "def run("
+            start = source.find(marker) + len(marker)
+            end = source.find(")", start)
+            parameters = []
+            if start >= len(marker) and end >= start:
+                for parameter in source[start:end].split(","):
+                    parameter = parameter.strip()
+                    if parameter and not parameter.startswith("*"):
+                        parameter = parameter.split("=", 1)[0].split(":", 1)[0].strip()
+                        if parameter and parameter not in ("self", "cls"):
+                            parameters.append(parameter)
+            description = str(module["DESCRIPTION"])
             if len(description) > MAX_TOOL_DESCRIPTION_CHARS:
                 description = description[:MAX_TOOL_DESCRIPTION_CHARS] + " [DESCRIPTION TRUNCATED]"
-            result = {"description": description, "parameters": [parameter.name for parameter in parameters]}
+            result = {"description": description, "parameters": parameters}
         else:
-            result = getattr(module, function)(*payload.get("args", []), **payload.get("kwargs", {}))
+            result = module[function](*args, **kwargs)
             if function != "transform" and result is not None:
                 result = str(result)
-        output = {"ok": True, "result": result}
+        return {"ok": True, "result": result}
     except BaseException as error:
-        output = {"ok": False, "error": f"{type(error).__name__}: {error}"}
-    try:
-        result_path.write_text(json.dumps(output, ensure_ascii=False))
-    except BaseException as error:
-        result_path.write_text(json.dumps({"ok": False, "error": f"Result serialization failed: {type(error).__name__}: {error}"}, ensure_ascii=False))
+        return {"ok": False, "error": f"{type(error).__name__}: {error}"}
 
 def invoke_dynamic(path, function, *args, **kwargs):
-    result_fd, result_file = tempfile.mkstemp(prefix="iter-result-", suffix=".json")
-    payload_fd, payload_file = tempfile.mkstemp(prefix="iter-payload-", suffix=".json")
-    try:
-        os.close(result_fd)
-        os.close(payload_fd)
-        Path(payload_file).write_text(json.dumps({"args": args, "kwargs": kwargs}, ensure_ascii=False))
-        inherit_stdin = Path(path).stem == "terminal" and function == "receive"
-        process = subprocess.Popen(
-            [sys.executable, str(Path(__file__).resolve()), "--invoke", str(Path(path).resolve()), function, result_file, payload_file],
-            stdin=None if inherit_stdin else subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=not inherit_stdin,
-            close_fds=True
-        )
-        try:
-            process.wait(timeout=DYNAMIC_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            if inherit_stdin:
-                process.kill()
-            else:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            process.wait()
-            return {"ok": False, "error": f"TIMEOUT after {DYNAMIC_TIMEOUT}s"}
-        try:
-            return json.loads(Path(result_file).read_text())
-        except Exception:
-            return {"ok": False, "error": f"Dynamic process exited with code {process.returncode} without a valid result"}
-    finally:
-        for file in (result_file, payload_file):
-            try:
-                os.unlink(file)
-            except FileNotFoundError:
-                pass
-
-if len(sys.argv) > 1 and sys.argv[1] == "--invoke":
-    dynamic_worker()
-    sys.exit(0)
+    return dynamic_worker(path, function, *args, **kwargs)
 
 # --------------------------------------------------------------------
 # 2. Runtime helpers:
 # --------------------------------------------------------------------
 def get_current_time():
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    current = time.localtime()
+    return "%04d-%02d-%02d %02d:%02d:%02d" % (current[0], current[1], current[2], current[3], current[4], current[5])
 
 def receive():
     events = []
-    paths = [path for path in sorted(Path("channels").glob("*.py")) if not path.name.startswith("_")]
+    paths = ["channels/" + name for name in sorted(os.listdir("channels")) if name.endswith(".py") and not name.startswith("_")]
     for path in paths:
         try:
             result = invoke_dynamic(path, "receive")
@@ -130,14 +86,14 @@ def receive():
                 raise RuntimeError(result["error"])
             event = result["result"]
             if event:
-                events.append("[" + path.stem + "] " + str(event))
+                events.append("[" + path.rsplit("/", 1)[-1].rsplit(".", 1)[0] + "] " + str(event))
         except Exception as error:
             events.append(f"[CHANNEL ERROR in {path}: {type(error).__name__}: {error}. Repair {path} if needed.]")
     return "\n".join(events)
 
-def slow_wait_for_input():
+async def slow_wait_for_input():
     for second in range(SLOW_STEP_DELAY):
-        time.sleep(1)
+        await bridge.sleep(1000)
         event_append = receive()
         if event_append:
             return event_append
@@ -145,8 +101,13 @@ def slow_wait_for_input():
 
 def save_experience(experience):
     with open("experience.tmp", "w", encoding="utf-8") as file:
-        json.dump(experience, file, ensure_ascii=False, indent=2)
-    os.replace("experience.tmp", "experience.json")
+        file.write(json.dumps(experience))
+    try:
+        os.remove("experience.json")
+    except OSError:
+        pass
+    os.rename("experience.tmp", "experience.json")
+    bridge.persist()
 
 # --------------------------------------------------------------------
 # 3. Dynamic components:
@@ -154,14 +115,14 @@ def save_experience(experience):
 def load_tools():
     inops = {}
     errors = []
-    paths = [path for path in sorted(Path("tools").glob("*.py")) if not path.name.startswith("_")]
+    paths = ["tools/" + name for name in sorted(os.listdir("tools")) if name.endswith(".py") and not name.startswith("_")]
     for path in paths[:MAX_TOOLS]:
         try:
             result = invoke_dynamic(path, "__tool_metadata__")
             if not result["ok"]:
                 raise RuntimeError(result["error"])
             metadata = result["result"]
-            inops[path.stem] = (path, metadata["description"], metadata["parameters"])
+            inops[path.rsplit("/", 1)[-1].rsplit(".", 1)[0]] = (path, metadata["description"], metadata["parameters"])
         except Exception as error:
             errors.append(f"[TOOL ERROR in {path}: {type(error).__name__}: {error}. Repair {path} if needed.]")
     return inops, len(paths) - MAX_TOOLS, "\n".join(errors)
@@ -174,19 +135,18 @@ def native_tools(inops):
 
 def load_transformation_descriptions():
     entries = []
-    for path in sorted(Path("transformations").glob("*.py")):
-        if path.name.startswith("_"):
-            continue
+    paths = ["transformations/" + name for name in sorted(os.listdir("transformations")) if name.endswith(".py") and not name.startswith("_")]
+    for path in paths:
         result = invoke_dynamic(path, "__description__")
         if result["ok"]:
-            entries.append(f"{path.stem}: {result['result']}")
+            entries.append(f"{path.rsplit('/', 1)[-1].rsplit('.', 1)[0]}: {result['result']}")
         else:
-            entries.append(f"{path.stem}: [DESCRIPTION MISSING]")
+            entries.append(f"{path.rsplit('/', 1)[-1].rsplit('.', 1)[0]}: [DESCRIPTION MISSING]")
     return "\n".join(entries)
 
 def apply_transformation(messages, tools):
     errors = []
-    paths = sorted(path for path in Path("transformations").glob("*.py") if not path.name.startswith("_"))
+    paths = ["transformations/" + name for name in sorted(os.listdir("transformations")) if name.endswith(".py") and not name.startswith("_")]
     for path in paths:
         try:
             result = invoke_dynamic(path, "transform", messages, tools)
@@ -202,18 +162,23 @@ def apply_transformation(messages, tools):
 # --------------------------------------------------------------------
 try:
     with open("experience.json", "r", encoding="utf-8") as file:
-        experience = json.load(file)
-except FileNotFoundError:
+        experience = json.loads(file.read())
+except OSError:
     experience = []
-SESSION_ID = str(uuid.uuid4())
-client = openai.OpenAI(api_key=API_KEY, base_url=BASE_URL, timeout=LLM_TIMEOUT, max_retries=0, default_headers={"X-APC-Tenant": "iter", "x-session-id": SESSION_ID})
-time.sleep(INIT_WAIT)
-Path("memory").mkdir(exist_ok=True)
-Path("transformations").mkdir(exist_ok=True)
+SESSION_ID = str(bridge.session_id())
+await bridge.sleep(INIT_WAIT * 1000)
+try:
+    os.mkdir("memory")
+except OSError:
+    pass
+try:
+    os.mkdir("transformations")
+except OSError:
+    pass
 post_task_mode, autonomous_steps, new_burst, pending_event_append = False, 0, True, ""
 cleanup_interval = MAX_EXPERIENCE_SIZE - RETAIN_EXPERIENCE_SIZE
 cleanup_bucket = len(experience) // cleanup_interval
-while True:
+while not bool(bridge.should_stop()):
     current_bucket = len(experience) // cleanup_interval
     if current_bucket > cleanup_bucket:
         for i, old_message in enumerate(experience):
@@ -230,7 +195,7 @@ while True:
         experience = experience[1:]
     history_checkpoint = len(experience) #before user input
     try:
-        time.sleep(DEFAULT_DELAY)
+        await bridge.sleep(DEFAULT_DELAY * 1000)
         print("BEFORE RECEIVE")
         event_append = pending_event_append or receive()
         print("AFTER RECEIVE")
@@ -261,8 +226,27 @@ while True:
                 temporary_message += [{"role": "user", "content": f"[TOOL LIMIT REACHED: {omitted_tools} tools are currently omitted. Consolidate or remove tools if they are needed.]"}]
             TOOLS = native_tools(INOPS)
             TRANSFORMATIONS = load_transformation_descriptions()
-            memory_paths = [path for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts)]
-            memory_contents = [(path, path.read_text(encoding="utf-8", errors="replace").strip()) for path in memory_paths]
+            memory_paths = []
+            memory_folders = ["memory"]
+            while memory_folders:
+                folder = memory_folders.pop()
+                for name in sorted(os.listdir(folder)):
+                    if name.startswith("_"):
+                        continue
+                    path = folder + "/" + name
+                    try:
+                        directory = bool(os.stat(path)[0] & 0x4000)
+                    except OSError:
+                        directory = False
+                    if directory:
+                        memory_folders.append(path)
+                    else:
+                        memory_paths.append(path)
+            memory_paths = sorted(memory_paths)
+            memory_contents = []
+            for path in memory_paths:
+                with open(path, "r", encoding="utf-8") as file:
+                    memory_contents.append((path, file.read().strip()))
             memory_len = sum(len(content) for _, content in memory_contents)
             if memory_len <= MAX_MEMORY_CHARS:
                 MARGIN = MAX_MEMORY_CHARS - memory_len
@@ -272,35 +256,36 @@ while True:
                 DIFF = memory_len - MAX_MEMORY_CHARS
                 MEMORY = "./memory/:\n" + "\n".join(str(path) for path in memory_paths)
                 temporary_message += [{"role": "user", "content": f"[MEMORY FOLDER TOTAL CHARACTER CAPACITY BY FILES NOT BEGINNING WITH _ EXCEEDED BY {DIFF} CHARS. FIX THIS FIRST.]"}]
-            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
+            with open("prompt.txt", "r", encoding="utf-8") as file:
+                request_messages = [{"role": "system", "content": "prompt.txt:\n" + file.read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS)
             if transformation_error:
                 request_messages += [{"role": "user", "content": transformation_error}]
             print("BEFORE LLM")
-            response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice="required", max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
+            response = json.loads(str(await bridge.llm(BASE_URL + "/chat/completions", API_KEY, json.dumps({"model": MODEL, "messages": request_messages, "tools": request_tools, "tool_choice": "required", "max_tokens": MAX_TOKENS, "enable_thinking": True}), SESSION_ID)))
             print("AFTER LLM", response)
-            message = response.choices[0].message
-            if message.content:
-                message.content += "\n[NOT DELIVERED TO ANY CHANNEL. IF THIS WAS INTENDED AS COMMUNICATION, USE send.]"
-            if message.tool_calls:
-                message.tool_calls = message.tool_calls[:MAX_TOOL_CALLS]
+            message = response["choices"][0]["message"]
+            if message.get("content"):
+                message["content"] += "\n[NOT DELIVERED TO ANY CHANNEL. IF THIS WAS INTENDED AS COMMUNICATION, USE send.]"
+            if message.get("tool_calls"):
+                message["tool_calls"] = message["tool_calls"][:MAX_TOOL_CALLS]
                 break
             try:
-                if response.choices[0].finish_reason == "length":
+                if response["choices"][0]["finish_reason"] == "length":
                     retry_message = [{"role": "user", "content": "[OUTPUT TOKEN LIMIT REACHED. CALL THE REQUIRED TOOL CONCISELY.]"}]
                 else:
-                    retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.content!r}]"}]
+                    retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.get('content')!r}]"}]
             except:
-                retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.content!r}]"}]
-        print(f"RESPONSE {response}\nFINISH_REASON {response.choices[0].finish_reason}\nUSAGE {response.usage}")
-        experience += [{key: value for key, value in message.model_dump(exclude_none=True).items() if KEEP_REASONING_IN_EPISODE or key not in ("reasoning", "reasoning_details", "reasoning_content")}]
+                retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.get('content')!r}]"}]
+        print(f"RESPONSE {response}\nFINISH_REASON {response['choices'][0].get('finish_reason')}\nUSAGE {response.get('usage')}")
+        experience += [{key: value for key, value in message.items() if value is not None and (KEEP_REASONING_IN_EPISODE or key not in ("reasoning", "reasoning_details", "reasoning_content"))}]
         tool_outputs = []
-        for tool_call in message.tool_calls:
-            tool_name = tool_call.function.name
+        for tool_call in message["tool_calls"]:
+            tool_name = tool_call["function"]["name"]
             try:
-                tool_arguments = json.loads(tool_call.function.arguments)
-            except json.JSONDecodeError as error:
-                tool_arguments = tool_call.function.arguments
+                tool_arguments = json.loads(tool_call["function"]["arguments"])
+            except Exception as error:
+                tool_arguments = tool_call["function"]["arguments"]
                 ret = f"Invalid tool arguments from model: {error}"
             else:
                 try: #unless tool unknown/args formatting issue, we use the tool's INOPS function return value:
@@ -309,27 +294,33 @@ while True:
                     elif not isinstance(tool_arguments, dict):
                         ret = "Tool arguments must be a JSON object"
                     else:
-                        result = invoke_dynamic(INOPS[tool_name][0], "run", **tool_arguments)
-                        ret = result["result"] if result["ok"] else f"Tool execution failed: {result['error']}"
+                        with open(INOPS[tool_name][0], "r", encoding="utf-8") as file:
+                            tool_source = file.read()
+                        tool_module = {"__name__": "_dynamic_" + tool_name, "__file__": INOPS[tool_name][0]}
+                        exec(tool_source, tool_module)
+                        result = tool_module["run"](**tool_arguments)
+                        if "async def run(" in tool_source:
+                            result = await result
+                        ret = "" if result is None else str(result)
                 except Exception as error:
                     ret = f"Tool execution failed: {type(error).__name__}: {error}"
             ret = str(ret)
             if len(ret) > MAX_TOOL_OUTPUT_CHARS:
                 ret = ret[:MAX_TOOL_OUTPUT_CHARS] + " [TRUNCATED]"
-            experience += [{"role": "tool", "tool_call_id": tool_call.id, "content": "Step " + get_current_time() + ": " + ret}]
+            experience += [{"role": "tool", "tool_call_id": tool_call["id"], "content": "Step " + get_current_time() + ": " + ret}]
             tool_outputs += ["tool call: " + tool_name + " " + str(tool_arguments) + "\n" "tool return: " + ret]
         history_checkpoint = len(experience) #tool calls succeeded, even on later exception we won't unroll them
         save_experience(experience)
         print("Output> " + "\n".join(tool_outputs))
         autonomous_steps = 0 if event_append else autonomous_steps + 1
-        called_nop = any(call.function.name == "nop" for call in message.tool_calls)
+        called_nop = any(call["function"]["name"] == "nop" for call in message["tool_calls"])
         if called_nop:
             new_burst, autonomous_steps = True, 0
-            pending_event_append = slow_wait_for_input()
+            pending_event_append = await slow_wait_for_input()
         elif autonomous_steps >= MAX_FAST_STEPS:
             autonomous_steps = 0
-            pending_event_append = slow_wait_for_input()
+            pending_event_append = await slow_wait_for_input()
     except Exception as error:
         print(f"Output> {type(error).__name__}: {error}")
         experience = experience[:history_checkpoint]
-        time.sleep(ERROR_RECOVERY_TIME)
+        await bridge.sleep(ERROR_RECOVERY_TIME * 1000)

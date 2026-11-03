@@ -1,0 +1,2182 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Iter Browser</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg:#0d0f12;
+    --panel:#14171c;
+    --panel2:#191d23;
+    --line:#2a3038;
+    --text:#e5e7eb;
+    --muted:#8b949e;
+    --accent:#7aa2f7;
+    --user:#22314f;
+    --iter:#1c3329;
+  }
+  * { box-sizing:border-box }
+  html, body { height:100%; margin:0 }
+  body {
+    background:var(--bg); color:var(--text);
+    font:14px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    overflow:hidden;
+  }
+  button, input, textarea { font:inherit }
+  button {
+    background:#20252c; color:var(--text); border:1px solid #3a424c;
+    border-radius:6px; padding:6px 10px; cursor:pointer;
+  }
+  button:hover { background:#292f38 }
+  button:disabled { opacity:.45; cursor:default }
+  input, textarea {
+    background:#101318; color:var(--text); border:1px solid #343b45;
+    border-radius:6px; outline:none;
+  }
+  input:focus, textarea:focus { border-color:#5979b8 }
+
+  #app { height:100%; display:flex; flex-direction:column; min-height:0 }
+  #bar {
+    display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+    padding:8px; background:#101318; border-bottom:1px solid var(--line);
+    flex:0 0 auto;
+  }
+  #bar input { padding:6px 8px }
+  #endpoint { width:260px; flex:1 1 230px; max-width:400px }
+  #model { width:320px; flex:1 1 260px; max-width:480px }
+  #key { width:120px }
+  #remember-label { color:var(--muted); white-space:nowrap; user-select:none }
+  #remember-key { vertical-align:middle; margin-right:4px }
+
+  #chat-shell {
+    flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
+    width:min(980px,100%); margin:0 auto; padding:0 14px;
+  }
+  #chat {
+    flex:1 1 auto; min-height:0; overflow:auto;
+    padding:18px 0 10px;
+  }
+  .chat-empty {
+    color:var(--muted); text-align:center; margin-top:12vh; line-height:1.8;
+  }
+  .msg { display:flex; margin:8px 0 }
+  .msg.user { justify-content:flex-end }
+  .msg.iter { justify-content:flex-start }
+  .bubble {
+    max-width:min(78%,760px); white-space:pre-wrap; word-break:break-word;
+    padding:10px 12px; border:1px solid var(--line); border-radius:12px;
+    line-height:1.45;
+  }
+  .user .bubble { background:var(--user); border-bottom-right-radius:3px }
+  .iter .bubble { background:var(--iter); border-bottom-left-radius:3px }
+  .msg-meta { color:var(--muted); font-size:11px; margin-bottom:4px }
+
+  #chat-compose {
+    flex:0 0 auto; display:flex; gap:8px; padding:10px 0 12px;
+    border-top:1px solid var(--line);
+  }
+  #chat-input { flex:1; padding:10px 12px }
+  #send-chat { min-width:78px }
+
+  details.drawer {
+    flex:0 0 auto; border-top:1px solid var(--line); background:var(--panel);
+  }
+  details.drawer > summary {
+    cursor:pointer; user-select:none; list-style:none;
+    padding:7px 12px; color:#c9d1d9; background:#11151a;
+  }
+  details.drawer > summary::-webkit-details-marker { display:none }
+  details.drawer > summary::before { content:"▸ "; color:var(--muted) }
+  details.drawer[open] > summary::before { content:"▾ " }
+
+  #workspace {
+    height:min(42vh,390px); min-height:220px;
+    display:grid; grid-template-columns:210px minmax(260px,1fr) minmax(320px,1.25fr);
+    border-top:1px solid var(--line);
+  }
+  #files-pane, #editor-pane, #terminal-pane {
+    min-width:0; min-height:0; display:flex; flex-direction:column;
+  }
+  #files-pane, #editor-pane { border-right:1px solid var(--line) }
+  .pane-head {
+    height:34px; flex:0 0 34px; display:flex; align-items:center; gap:6px;
+    padding:4px 7px; border-bottom:1px solid var(--line); color:var(--muted);
+    background:var(--panel2);
+  }
+  .pane-head .grow {
+    flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .mini { padding:3px 7px; font-size:12px }
+  #file-tree {
+    flex:1; overflow:auto; padding:6px;
+  }
+  .tree-row {
+    display:block; width:100%; text-align:left; border:0; border-radius:3px;
+    background:transparent; padding:2px 4px; color:#c9d1d9;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .tree-row:hover { background:#222831 }
+  .tree-dir { color:#9db7e5 }
+  .tree-selected { background:#273244 !important }
+  #file-editor-wrap {
+    position:relative; flex:1; min-height:0; overflow:hidden; background:#101318;
+  }
+  #file-editor, #file-highlight {
+    position:absolute; inset:0; margin:0; width:100%; height:100%;
+    border:0; border-radius:0; padding:9px 10px; line-height:1.4;
+    white-space:pre; tab-size:4; font:inherit;
+  }
+  #file-editor {
+    resize:none; z-index:2; background:#101318; color:var(--text);
+  }
+  #file-highlight {
+    z-index:1; overflow:auto; pointer-events:none; color:var(--text);
+    background:#101318;
+  }
+  #file-highlight::-webkit-scrollbar { display:none }
+  #file-highlight { scrollbar-width:none }
+  #file-editor-wrap.highlighting #file-editor {
+    background:transparent; color:transparent; caret-color:var(--text);
+  }
+  #file-editor-wrap.highlighting #file-editor::selection {
+    background:rgba(122,162,247,.28); color:transparent;
+  }
+  .syn-comment { color:#7d8590 }
+  .syn-string { color:#a5d6ff }
+  .syn-keyword { color:#ff7b72 }
+  .syn-number { color:#79c0ff }
+  .syn-literal { color:#d2a8ff }
+  .syn-decorator { color:#ffa657 }
+  .syn-json-key { color:#7ee787 }
+  .syn-metta-command { color:#ff7b72; font-weight:700 }
+  .syn-paren-0 { color:#79c0ff }
+  .syn-paren-1 { color:#d2a8ff }
+  .syn-paren-2 { color:#ffa657 }
+  .syn-paren-3 { color:#7ee787 }
+  .syn-paren-4 { color:#a5d6ff }
+  .syn-paren-5 { color:#ff7b72 }
+  .syn-tag { color:#7ee787 }
+  .syn-attr { color:#79c0ff }
+  .syn-punct { color:#8b949e }
+  .syn-js-keyword { color:#ff7b72 }
+  .syn-js-builtin { color:#d2a8ff }
+  #terminal-output, #activity {
+    flex:1; min-height:0; overflow:auto; margin:0; white-space:pre-wrap;
+    padding:8px 10px; color:#d7dce2;
+  }
+  #terminal-output { background:#0c0f12 }
+  #terminal-compose {
+    flex:0 0 auto; display:flex; align-items:center; gap:6px;
+    border-top:1px solid var(--line); background:#0c0f12; padding:5px 8px;
+  }
+  #terminal-prompt { color:#7ee787 }
+  #terminal-input {
+    flex:1; border:0; background:transparent; padding:4px 0; border-radius:0;
+  }
+
+  #activity {
+    height:min(29vh,280px); background:#0b0d10; border-top:1px solid var(--line);
+    color:#aeb6c0;
+  }
+  #status {
+    margin-left:auto; color:var(--muted); font-size:12px;
+  }
+  #status.running { color:#7ee787 }
+  #status.stopped { color:#8b949e }
+
+  @media (max-width:900px) {
+    #workspace { grid-template-columns:180px 1fr; }
+    #terminal-pane { grid-column:1 / -1; border-top:1px solid var(--line); min-height:150px }
+    #workspace { height:55vh; grid-template-rows:1fr 170px }
+  }
+</style>
+
+<div id="app">
+  <div id="bar">
+    <input id="endpoint" value="https://openrouter.ai/api/v1" title="OpenAI-compatible base URL">
+    <input id="model" value="z-ai/glm-5.2" title="model">
+    <input id="key" value="dummy" type="password" title="API key">
+    <label id="remember-label" title="Store API key in this browser's localStorage">
+      <input id="remember-key" type="checkbox">remember key
+    </label>
+    <button id="start" disabled>Start Iter</button>
+    <button id="stop" disabled>Stop</button>
+    <button id="export-app" title="Download /work and UI settings as a ZIP">Export</button>
+    <button id="import-app" title="Replace /work and UI settings from a ZIP">Import</button>
+    <button id="reset-app" title="Delete persisted filesystem and settings, then reload">Reset</button>
+    <input id="import-file" type="file" accept=".zip,application/zip" hidden>
+  </div>
+
+  <section id="chat-shell">
+    <div id="chat">
+      <div class="chat-empty" id="chat-empty">Iter browser<br>Messages stay here; runtime noise stays below.</div>
+    </div>
+    <div id="chat-compose">
+      <input id="chat-input" disabled autocomplete="off" spellcheck="false" placeholder="Message Iter">
+      <button id="send-chat" disabled>Send</button>
+    </div>
+  </section>
+
+  <details class="drawer" id="workspace-drawer" open>
+    <summary>Terminal &amp; Files <span id="workspace-summary"></span></summary>
+    <div id="workspace">
+      <section id="files-pane">
+        <div class="pane-head"><span class="grow">/work</span><button class="mini" id="refresh-files">↻</button></div>
+        <div id="file-tree"></div>
+      </section>
+      <section id="editor-pane">
+        <div class="pane-head">
+          <span class="grow" id="file-path">Select a file</span>
+          <button class="mini" id="save-file" disabled>Save</button>
+        </div>
+        <div id="file-editor-wrap">
+          <pre id="file-highlight" aria-hidden="true"></pre>
+          <textarea id="file-editor" disabled spellcheck="false"></textarea>
+        </div>
+      </section>
+      <section id="terminal-pane">
+        <div class="pane-head"><span class="grow">just-bash</span><span>/work</span></div>
+        <pre id="terminal-output">$ </pre>
+        <div id="terminal-compose">
+          <span id="terminal-prompt">$</span>
+          <input id="terminal-input" disabled autocomplete="off" spellcheck="false">
+        </div>
+      </section>
+    </div>
+  </details>
+
+  <details class="drawer" id="activity-drawer">
+    <summary>System Activity <span id="status" class="stopped">loading</span></summary>
+    <pre id="activity">loading MicroPython...</pre>
+  </details>
+</div>
+
+<script type="module">
+import * as MP from "https://cdn.jsdelivr.net/npm/@micropython/micropython-webassembly-pyscript@1.28.0-6/micropython.mjs";
+import { Bash, defineCommand } from "https://esm.sh/just-bash@3.4.2?bundle";
+import html2canvas from "https://esm.sh/html2canvas@1.4.1";
+import JSZip from "https://esm.sh/jszip@3.10.1";
+
+const activity = document.querySelector('#activity');
+const term = activity; // compatibility: existing out() calls are system activity
+const chat = document.querySelector('#chat');
+const chatEmpty = document.querySelector('#chat-empty');
+const chatInput = document.querySelector('#chat-input');
+const sendChat = document.querySelector('#send-chat');
+const input = chatInput; // compatibility for existing focus/status helpers
+const terminalOutput = document.querySelector('#terminal-output');
+const terminalInput = document.querySelector('#terminal-input');
+const fileTree = document.querySelector('#file-tree');
+const fileEditorWrap = document.querySelector('#file-editor-wrap');
+const fileHighlight = document.querySelector('#file-highlight');
+const fileEditor = document.querySelector('#file-editor');
+const filePath = document.querySelector('#file-path');
+const saveFile = document.querySelector('#save-file');
+const refreshFiles = document.querySelector('#refresh-files');
+const workspaceDrawer = document.querySelector('#workspace-drawer');
+const activityDrawer = document.querySelector('#activity-drawer');
+const status = document.querySelector('#status');
+const start = document.querySelector('#start');
+const stop = document.querySelector('#stop');
+const exportApp = document.querySelector('#export-app');
+const importApp = document.querySelector('#import-app');
+const importFile = document.querySelector('#import-file');
+const resetApp = document.querySelector('#reset-app');
+const endpoint = document.querySelector('#endpoint');
+const model = document.querySelector('#model');
+const key = document.querySelector('#key');
+const rememberKey = document.querySelector('#remember-key');
+const enc = new TextEncoder(), dec = new TextDecoder();
+let terminalCwd = "/work";
+let terminalHistory = [];
+let terminalHistoryIndex = 0;
+let terminalHistoryDraft = "";
+const inbox = [];
+let mp, iterRunning = false, stopRequested = false;
+let bashFs = null, pyCapture = null;
+
+const out = s => {
+  activity.textContent += String(s);
+  const lines = activity.textContent.split("\n");
+  if(lines.length > 1000)
+    activity.textContent = lines.slice(lines.length - 1000).join("\n");
+  activity.scrollTop = activity.scrollHeight;
+};
+
+function terminalOut(s) {
+  terminalOutput.textContent += String(s);
+  terminalOutput.scrollTop = terminalOutput.scrollHeight;
+}
+
+const CHAT_PATH = '/work/iter/chat.txt';
+
+function appendChatRecord(role, text, channel) {
+  if(!mp) return;
+  const record = JSON.stringify({
+    time: new Date().toISOString(),
+    role: role,
+    channel: channel || 'terminal',
+    text: String(text)
+  }) + '\n';
+  let existing = '';
+  try { existing = read(CHAT_PATH); } catch {}
+  write(CHAT_PATH, existing + record);
+  persist();
+}
+
+function addChat(role, text, channel='terminal', save=true) {
+  if(chatEmpty) chatEmpty.remove();
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + (role === 'user' ? 'user' : 'iter');
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+
+  const meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  meta.textContent = (role === 'user' ? 'You' : 'Iter') + (channel && channel !== 'terminal' ? ' · ' + channel : '');
+
+  const body = document.createElement('div');
+  body.textContent = String(text);
+
+  bubble.append(meta, body);
+  wrap.appendChild(bubble);
+  chat.appendChild(wrap);
+  chat.scrollTop = chat.scrollHeight;
+
+  if(save) appendChatRecord(role, text, channel);
+}
+
+function setStatus(text, running=false) {
+  status.textContent = text;
+  status.className = running ? 'running' : 'stopped';
+}
+
+const norm = p => {
+  const a=[]; for(const x of String(p).split('/')) { if(!x||x==='.') continue; if(x==='..') a.pop(); else a.push(x); }
+  return '/' + a.join('/');
+};
+const path = p => p && String(p).startsWith('/') ? norm(p) : norm(mp.FS.cwd() + '/' + (p || ''));
+const exists = p => { try { mp.FS.stat(path(p)); return true; } catch { return false; } };
+const read = p => dec.decode(mp.FS.readFile(path(p)));
+const write = (p,s) => mp.FS.writeFile(path(p), enc.encode(String(s)));
+function mkdirp(p) {
+  let cur=''; for(const x of norm(p).split('/').filter(Boolean)) { cur += '/' + x; try { mp.FS.mkdir(cur); } catch {} }
+}
+
+let selectedFile = null;
+let fileRefreshTimer = null;
+
+function scheduleFileRefresh() {
+  clearTimeout(fileRefreshTimer);
+  fileRefreshTimer = setTimeout(() => {
+    if(mp && workspaceDrawer.open) refreshFileTree();
+  }, 180);
+}
+
+function fileKind(p) {
+  try {
+    const st = mp.FS.stat(p);
+    return mp.FS.isDir(st.mode) ? 'dir' : 'file';
+  } catch { return null; }
+}
+
+function renderDirectory(dir, host, depth=0) {
+  let names;
+  try { names = mp.FS.readdir(dir).filter(n => n !== '.' && n !== '..').sort(); }
+  catch { return; }
+
+  names.sort((a,b) => {
+    const pa=(dir==='/'?'':dir)+'/'+a, pb=(dir==='/'?'':dir)+'/'+b;
+    const da=fileKind(pa)==='dir', db=fileKind(pb)==='dir';
+    return da===db ? a.localeCompare(b) : (da ? -1 : 1);
+  });
+
+  for(const name of names) {
+    const p = (dir === '/' ? '' : dir) + '/' + name;
+    const kind = fileKind(p);
+
+    if(kind === 'dir') {
+      const details = document.createElement('details');
+      details.open = depth < 1;
+      const summary = document.createElement('summary');
+      summary.className = 'tree-row tree-dir';
+      summary.textContent = name + '/';
+      details.appendChild(summary);
+      const children = document.createElement('div');
+      children.style.paddingLeft = '11px';
+      details.appendChild(children);
+      details.addEventListener('toggle', () => {
+        if(details.open && !children.dataset.loaded) {
+          children.dataset.loaded = '1';
+          renderDirectory(p, children, depth+1);
+        }
+      });
+      if(details.open) {
+        children.dataset.loaded = '1';
+        renderDirectory(p, children, depth+1);
+      }
+      host.appendChild(details);
+    } else if(kind === 'file') {
+      const btn = document.createElement('button');
+      btn.className = 'tree-row' + (selectedFile === p ? ' tree-selected' : '');
+      btn.textContent = name;
+      btn.title = p;
+      btn.onclick = () => openFileInEditor(p);
+      host.appendChild(btn);
+    }
+  }
+}
+
+function refreshFileTree() {
+  if(!mp) return;
+  fileTree.textContent = '';
+  renderDirectory('/work', fileTree, 0);
+}
+
+const FILE_HIGHLIGHT_LIMIT = 500000;
+const JSON_PRETTY_LIMIT = 2000000;
+
+function escapeFileHtml(text) {
+  return String(text)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+const PY_KEYWORDS = new Set([
+  'and','as','assert','async','await','break','class','continue','def','del',
+  'elif','else','except','finally','for','from','global','if','import','in',
+  'is','lambda','nonlocal','not','or','pass','raise','return','try','while',
+  'with','yield'
+]);
+
+function highlightPython(text) {
+  const tokenRe = /("{3}[\s\S]*?"{3}|'{3}[\s\S]*?'{3}|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|#[^\n]*|@[A-Za-z_]\w*|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*\b)/g;
+  let output = '';
+  let last = 0;
+  let match;
+
+  while((match = tokenRe.exec(text))) {
+    output += escapeFileHtml(text.slice(last, match.index));
+    const token = match[0];
+    let cls = '';
+
+    if(token.startsWith('#')) cls = 'syn-comment';
+    else if(token.startsWith('"') || token.startsWith("'")) cls = 'syn-string';
+    else if(token.startsWith('@')) cls = 'syn-decorator';
+    else if(/^\d/.test(token)) cls = 'syn-number';
+    else if(PY_KEYWORDS.has(token)) cls = 'syn-keyword';
+    else if(token === 'True' || token === 'False' || token === 'None') cls = 'syn-literal';
+
+    output += cls
+      ? '<span class="' + cls + '">' + escapeFileHtml(token) + '</span>'
+      : escapeFileHtml(token);
+
+    last = match.index + token.length;
+  }
+
+  return output + escapeFileHtml(text.slice(last));
+}
+
+function highlightJson(text) {
+  const tokenRe = /"(?:\\.|[^"\\])*"(?=\s*:)|"(?:\\.|[^"\\])*"|\b(?:true|false|null)\b|-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g;
+  let output = '';
+  let last = 0;
+  let match;
+
+  while((match = tokenRe.exec(text))) {
+    output += escapeFileHtml(text.slice(last, match.index));
+    const token = match[0];
+    let cls = 'syn-number';
+
+    if(token.startsWith('"')) {
+      const rest = text.slice(match.index + token.length);
+      cls = /^\s*:/.test(rest) ? 'syn-json-key' : 'syn-string';
+    } else if(token === 'true' || token === 'false' || token === 'null') {
+      cls = 'syn-literal';
+    }
+
+    output += '<span class="' + cls + '">' + escapeFileHtml(token) + '</span>';
+    last = match.index + token.length;
+  }
+
+  return output + escapeFileHtml(text.slice(last));
+}
+
+function highlightMetta(text) {
+  let output = '';
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let inComment = false;
+
+  for(let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if(inComment) {
+      if(ch === '\n') {
+        inComment = false;
+        output += '\n';
+      } else {
+        output += '<span class="syn-comment">' + escapeFileHtml(ch) + '</span>';
+      }
+      continue;
+    }
+
+    if(inString) {
+      output += escapeFileHtml(ch);
+      if(escaped) escaped = false;
+      else if(ch === '\\') escaped = true;
+      else if(ch === '"') inString = false;
+      continue;
+    }
+
+    if(ch === '"') {
+      inString = true;
+      output += escapeFileHtml(ch);
+      continue;
+    }
+
+    if(ch === ';') {
+      inComment = true;
+      output += '<span class="syn-comment">;</span>';
+      continue;
+    }
+
+    if(ch === '!') {
+      output += '<span class="syn-metta-command">!</span>';
+      continue;
+    }
+
+    if(ch === '(') {
+      const cls = 'syn-paren-' + (depth % 6);
+      output += '<span class="' + cls + '">(</span>';
+      depth++;
+      continue;
+    }
+
+    if(ch === ')') {
+      depth = Math.max(0, depth - 1);
+      const cls = 'syn-paren-' + (depth % 6);
+      output += '<span class="' + cls + '">)</span>';
+      continue;
+    }
+
+    output += escapeFileHtml(ch);
+  }
+
+  return output;
+}
+
+const JS_KEYWORDS = new Set([
+  'as','async','await','break','case','catch','class','const','continue',
+  'debugger','default','delete','do','else','export','extends','finally',
+  'for','from','function','get','if','import','in','instanceof','let','new',
+  'of','return','set','static','super','switch','throw','try','typeof','var',
+  'void','while','with','yield'
+]);
+
+const JS_BUILTINS = new Set([
+  'Array','Boolean','Date','Error','Function','JSON','Map','Math','Number',
+  'Object','Promise','RegExp','Set','String','Symbol','URL','URLSearchParams',
+  'console','document','globalThis','window'
+]);
+
+function highlightJavaScript(text) {
+  const tokenRe = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b|\b[A-Za-z_$][A-Za-z0-9_$]*\b)/g;
+  let output = '';
+  let last = 0;
+  let match;
+
+  while((match = tokenRe.exec(text))) {
+    output += escapeFileHtml(text.slice(last, match.index));
+    const token = match[0];
+    let cls = '';
+
+    if(token.startsWith('//') || token.startsWith('/*')) cls = 'syn-comment';
+    else if(token.startsWith('"') || token.startsWith("'") || token.startsWith('`')) cls = 'syn-string';
+    else if(/^\d/.test(token)) cls = 'syn-number';
+    else if(JS_KEYWORDS.has(token)) cls = 'syn-js-keyword';
+    else if(token === 'true' || token === 'false' || token === 'null' ||
+            token === 'undefined' || token === 'NaN' || token === 'Infinity')
+      cls = 'syn-literal';
+    else if(JS_BUILTINS.has(token)) cls = 'syn-js-builtin';
+
+    output += cls
+      ? '<span class="' + cls + '">' + escapeFileHtml(token) + '</span>'
+      : escapeFileHtml(token);
+
+    last = match.index + token.length;
+  }
+
+  return output + escapeFileHtml(text.slice(last));
+}
+
+function highlightHtmlTag(raw) {
+  if(raw.startsWith('<!--'))
+    return '<span class="syn-comment">' + escapeFileHtml(raw) + '</span>';
+
+  if(/^<!doctype\b/i.test(raw))
+    return '<span class="syn-tag">' + escapeFileHtml(raw) + '</span>';
+
+  const opening = raw.match(/^<(\/?)([A-Za-z][A-Za-z0-9:_-]*)/);
+  if(!opening)
+    return escapeFileHtml(raw);
+
+  let output =
+    '<span class="syn-punct">&lt;' +
+    escapeFileHtml(opening[1]) +
+    '</span>' +
+    '<span class="syn-tag">' +
+    escapeFileHtml(opening[2]) +
+    '</span>';
+
+  let i = opening[0].length;
+
+  while(i < raw.length) {
+    const ch = raw[i];
+
+    if(ch === '>') {
+      output += '<span class="syn-punct">&gt;</span>';
+      i++;
+      continue;
+    }
+
+    if(ch === '/' && raw[i + 1] === '>') {
+      output += '<span class="syn-punct">/&gt;</span>';
+      i += 2;
+      continue;
+    }
+
+    if(/\s/.test(ch)) {
+      output += escapeFileHtml(ch);
+      i++;
+      continue;
+    }
+
+    if(ch === '"' || ch === "'") {
+      const quote = ch;
+      let end = i + 1;
+      let escaped = false;
+
+      while(end < raw.length) {
+        const current = raw[end];
+        if(escaped) {
+          escaped = false;
+        } else if(current === '\\') {
+          escaped = true;
+        } else if(current === quote) {
+          end++;
+          break;
+        }
+        end++;
+      }
+
+      output +=
+        '<span class="syn-string">' +
+        escapeFileHtml(raw.slice(i, end)) +
+        '</span>';
+      i = end;
+      continue;
+    }
+
+    if(ch === '=') {
+      output += '<span class="syn-punct">=</span>';
+      i++;
+      continue;
+    }
+
+    const attr = raw.slice(i).match(/^[A-Za-z_:][A-Za-z0-9:_.-]*/);
+    if(attr) {
+      output +=
+        '<span class="syn-attr">' +
+        escapeFileHtml(attr[0]) +
+        '</span>';
+      i += attr[0].length;
+      continue;
+    }
+
+    output += escapeFileHtml(ch);
+    i++;
+  }
+
+  return output;
+}
+
+function highlightHtml(text) {
+  let output = '';
+  let plainStart = 0;
+  let i = 0;
+
+  while(i < text.length) {
+    if(text.startsWith('<!--', i)) {
+      output += escapeFileHtml(text.slice(plainStart, i));
+      const end = text.indexOf('-->', i + 4);
+      const stop = end < 0 ? text.length : end + 3;
+      output +=
+        '<span class="syn-comment">' +
+        escapeFileHtml(text.slice(i, stop)) +
+        '</span>';
+      i = stop;
+      plainStart = i;
+      continue;
+    }
+
+    if(text[i] !== '<') {
+      i++;
+      continue;
+    }
+
+    const next = text[i + 1] || '';
+    const looksLikeTag =
+      /[A-Za-z]/.test(next) ||
+      next === '/' ||
+      text.slice(i, i + 9).toLowerCase() === '<!doctype';
+
+    if(!looksLikeTag) {
+      i++;
+      continue;
+    }
+
+    let j = i + 1;
+    let quote = '';
+    let escaped = false;
+
+    while(j < text.length) {
+      const ch = text[j];
+
+      if(quote) {
+        if(escaped) {
+          escaped = false;
+        } else if(ch === '\\') {
+          escaped = true;
+        } else if(ch === quote) {
+          quote = '';
+        }
+      } else if(ch === '"' || ch === "'") {
+        quote = ch;
+      } else if(ch === '>') {
+        j++;
+        break;
+      }
+
+      j++;
+    }
+
+    if(j > text.length || text[j - 1] !== '>') {
+      i++;
+      continue;
+    }
+
+    output += escapeFileHtml(text.slice(plainStart, i));
+    output += highlightHtmlTag(text.slice(i, j));
+    i = j;
+    plainStart = i;
+  }
+
+  return output + escapeFileHtml(text.slice(plainStart));
+}
+
+function editorLanguageForPath(p) {
+  const lower = String(p || '').toLowerCase();
+  if(lower.endsWith('.py')) return 'python';
+  if(lower.endsWith('.json')) return 'json';
+  if(lower.endsWith('.metta')) return 'metta';
+  if(lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
+  if(lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) return 'javascript';
+  return '';
+}
+
+function updateFileHighlight() {
+  const lang = fileEditor.dataset.language || '';
+
+  if(!lang || fileEditor.value.length > FILE_HIGHLIGHT_LIMIT) {
+    fileEditorWrap.classList.remove('highlighting');
+    fileHighlight.textContent = '';
+    return;
+  }
+
+  fileEditorWrap.classList.add('highlighting');
+  fileHighlight.innerHTML =
+    lang === 'python'
+      ? highlightPython(fileEditor.value)
+      : lang === 'json'
+        ? highlightJson(fileEditor.value)
+        : lang === 'metta'
+          ? highlightMetta(fileEditor.value)
+          : lang === 'html'
+            ? highlightHtml(fileEditor.value)
+            : highlightJavaScript(fileEditor.value);
+
+  fileHighlight.scrollTop = fileEditor.scrollTop;
+  fileHighlight.scrollLeft = fileEditor.scrollLeft;
+}
+
+fileEditor.addEventListener('input', updateFileHighlight);
+fileEditor.addEventListener('scroll', () => {
+  fileHighlight.scrollTop = fileEditor.scrollTop;
+  fileHighlight.scrollLeft = fileEditor.scrollLeft;
+});
+
+function openFileInEditor(p) {
+  selectedFile = p;
+  filePath.textContent = p;
+  try {
+    const bytes = new Uint8Array(mp.FS.readFile(p));
+    const looksBinary = bytes.some((b,i) => i < 4096 && b === 0);
+
+    if(looksBinary) {
+      fileEditor.dataset.language = '';
+      fileEditor.value = '[binary file: ' + bytes.length + ' bytes]';
+      fileEditor.disabled = true;
+      saveFile.disabled = true;
+    } else {
+      let text = dec.decode(bytes);
+      const language = editorLanguageForPath(p);
+
+      if(language === 'json' && bytes.length <= JSON_PRETTY_LIMIT) {
+        try {
+          text = JSON.stringify(JSON.parse(text), null, 2);
+        } catch {}
+      }
+
+      fileEditor.dataset.language = language;
+      fileEditor.value = text;
+      fileEditor.disabled = false;
+      saveFile.disabled = false;
+    }
+  } catch(e) {
+    fileEditor.dataset.language = '';
+    fileEditor.value = '[could not read file: ' + String(e?.message ?? e) + ']';
+    fileEditor.disabled = true;
+    saveFile.disabled = true;
+  }
+
+  fileEditor.scrollTop = 0;
+  fileEditor.scrollLeft = 0;
+  updateFileHighlight();
+
+  for(const row of fileTree.querySelectorAll('.tree-row')) {
+    row.classList.toggle('tree-selected', row.title === p);
+  }
+}
+
+saveFile.addEventListener('click', () => {
+  if(!selectedFile || fileEditor.disabled) return;
+  try {
+    mp.FS.writeFile(selectedFile, enc.encode(fileEditor.value));
+    persist();
+    terminalOut('\\n[file saved] ' + selectedFile + '\\n$ ');
+    scheduleFileRefresh();
+  } catch(e) {
+    terminalOut('\\n[save failed] ' + String(e?.message ?? e) + '\\n$ ');
+  }
+});
+
+refreshFiles.addEventListener('click', refreshFileTree);
+workspaceDrawer.addEventListener('toggle', () => {
+  saveUiState();
+  if(workspaceDrawer.open) {
+    refreshFileTree();
+    terminalInput.focus();
+  }
+});
+activityDrawer.addEventListener('toggle', saveUiState);
+
+function restoreChat() {
+  if(exists(CHAT_PATH)) {
+    try {
+      for(const line of read(CHAT_PATH).split('\n')) {
+        if(!line.trim()) continue;
+        const item = JSON.parse(line);
+        if((item.role === 'user' || item.role === 'iter') && typeof item.text === 'string')
+          addChat(item.role, item.text, item.channel || 'terminal', false);
+      }
+      return;
+    } catch(e) {
+      console.warn('chat transcript restore failed', e);
+    }
+  }
+
+  // One-time migration for older builds that only had experience.json.
+  if(!exists('/work/iter/experience.json')) return;
+  try {
+    const exp = JSON.parse(read('/work/iter/experience.json'));
+    for(const m of exp) {
+      if(m?.role === 'user' && typeof m.content === 'string') {
+        const match = m.content.match(/^Step .*: \[terminal\] ([\s\S]*)$/);
+        if(match) addChat('user', match[1], 'terminal', true);
+      }
+      if(m?.role === 'assistant' && Array.isArray(m.tool_calls)) {
+        for(const call of m.tool_calls) {
+          if(call?.function?.name !== 'send') continue;
+          try {
+            const args = JSON.parse(call.function.arguments || '{}');
+            if(typeof args.message === 'string')
+              addChat('iter', args.message, args.channel || 'terminal', true);
+          } catch {}
+        }
+      }
+    }
+  } catch(e) {
+    console.warn('chat history migration failed', e);
+  }
+}
+
+const SETTINGS_KEY = 'iter-browser-settings-v1';
+const UI_KEY = 'iter-browser-ui-v1';
+const FSKEY = 'iter-browser-fs-v1';
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for(let i=0; i<bytes.length; i+=chunk)
+    binary += String.fromCharCode(...bytes.subarray(i, i+chunk));
+  return btoa(binary);
+}
+
+function base64ToBytes(text) {
+  const binary = atob(String(text));
+  const bytes = new Uint8Array(binary.length);
+  for(let i=0; i<binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function currentSettings() {
+  const settings = {
+    endpoint: endpoint.value,
+    model: model.value,
+    rememberKey: rememberKey.checked
+  };
+  if(rememberKey.checked)
+    settings.apiKey = key.value;
+  return settings;
+}
+
+function loadSettings() {
+  try {
+    const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    if(settings.endpoint) endpoint.value = settings.endpoint;
+    if(settings.model) model.value = settings.model;
+
+    rememberKey.checked = !!settings.rememberKey;
+    if(rememberKey.checked && typeof settings.apiKey === 'string')
+      key.value = settings.apiKey;
+  } catch(e) {
+    console.warn('settings restore failed', e);
+  }
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(currentSettings()));
+  } catch(e) {
+    console.warn('settings save failed', e);
+  }
+}
+
+function currentUiState() {
+  return {
+    workspaceOpen: !!workspaceDrawer.open,
+    activityOpen: !!activityDrawer.open,
+    terminalCwd,
+    terminalHistory: terminalHistory.slice(-100)
+  };
+}
+
+function saveUiState() {
+  try {
+    localStorage.setItem(UI_KEY, JSON.stringify(currentUiState()));
+  } catch(e) {
+    console.warn('UI state save failed', e);
+  }
+}
+
+function loadUiState() {
+  try {
+    const state = JSON.parse(localStorage.getItem(UI_KEY) || '{}');
+    if(typeof state.workspaceOpen === 'boolean') workspaceDrawer.open = state.workspaceOpen;
+    if(typeof state.activityOpen === 'boolean') activityDrawer.open = state.activityOpen;
+    if(typeof state.terminalCwd === 'string' && state.terminalCwd.startsWith('/work'))
+      terminalCwd = state.terminalCwd;
+    if(Array.isArray(state.terminalHistory))
+      terminalHistory = state.terminalHistory.filter(x => typeof x === 'string').slice(-100);
+    terminalHistoryIndex = terminalHistory.length;
+  } catch(e) {
+    console.warn('UI state restore failed', e);
+  }
+}
+
+endpoint.addEventListener('input', saveSettings);
+model.addEventListener('input', saveSettings);
+key.addEventListener('input', () => {
+  if(rememberKey.checked) saveSettings();
+});
+rememberKey.addEventListener('change', () => {
+  saveSettings(); // when unchecked, this also removes the stored key
+});
+
+loadSettings();
+loadUiState();
+
+function clearPersistedState() {
+  try {
+    localStorage.removeItem(FSKEY);
+    localStorage.removeItem(SETTINGS_KEY);
+    localStorage.removeItem(UI_KEY);
+  } catch(e) {
+    console.warn('reset failed', e);
+  }
+}
+
+function safeZipRelativePath(name) {
+  name = String(name).replace(/\\/g, "/");
+  while(name.startsWith("/")) name = name.slice(1);
+  const parts = [];
+  for(const part of name.split("/")) {
+    if(!part || part === ".") continue;
+    if(part === "..") throw new Error("ZIP contains an unsafe path: " + name);
+    parts.push(part);
+  }
+  return parts.join("/");
+}
+
+async function exportPortableState() {
+  if(!mp) throw new Error("MicroPython is not ready");
+
+  saveSettings();
+  saveUiState();
+  persist();
+
+  const zip = new JSZip();
+  const work = zip.folder("work");
+  const browser = zip.folder("browser");
+
+  function walk(dir, rel="") {
+    const names = mp.FS.readdir(dir).filter(n => n !== "." && n !== "..");
+    if(!names.length && rel) work.folder(rel);
+
+    for(const name of names) {
+      const p = (dir === "/" ? "" : dir) + "/" + name;
+      const childRel = rel ? rel + "/" + name : name;
+      const st = mp.FS.stat(p);
+
+      if(mp.FS.isDir(st.mode)) {
+        work.folder(childRel);
+        walk(p, childRel);
+      } else {
+        work.file(childRel, new Uint8Array(mp.FS.readFile(p)), { binary: true });
+      }
+    }
+  }
+
+  walk("/work");
+
+  const browserStorage = {};
+  for(let i=0; i<localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if(!k || !k.startsWith("iter-browser-")) continue;
+    if(k === FSKEY || k === "iter-browser-verbatim-import") continue;
+    browserStorage[k] = localStorage.getItem(k);
+  }
+  browser.file("localStorage.json", JSON.stringify(browserStorage, null, 2));
+
+  const blob = await zip.generateAsync({
+    type: "blob",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 }
+  });
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "iter-browser-" + stamp + ".zip";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+async function importPortableState(file) {
+  if(!file) return;
+
+  const zip = await JSZip.loadAsync(file);
+  const entries = [];
+
+  for(const [rawName, entry] of Object.entries(zip.files)) {
+    const name = safeZipRelativePath(rawName);
+    if(name) entries.push({ rawName, name, entry });
+  }
+
+  // Direct export has work/ and browser/. Also tolerate one outer wrapper.
+  let prefix = "";
+  const rootHasWork = entries.some(x => x.name === "work" || x.name.startsWith("work/"));
+  if(!rootHasWork) {
+    const candidates = new Set();
+    for(const x of entries) {
+      const marker = x.name.indexOf("/work/");
+      if(marker >= 0) candidates.add(x.name.slice(0, marker + 1));
+      else if(x.name.endsWith("/work")) candidates.add(x.name.slice(0, -"work".length));
+    }
+    if(candidates.size === 1) prefix = [...candidates][0];
+  }
+
+  const workRoot = prefix + "work";
+  const browserRoot = prefix + "browser";
+  const hasWork = entries.some(x => x.name === workRoot || x.name.startsWith(workRoot + "/"));
+
+  const files = {};
+  const dirs = ["/work"];
+
+  for(const {rawName, name, entry} of entries) {
+    let rel;
+
+    if(hasWork) {
+      if(name === workRoot) continue;
+      if(!name.startsWith(workRoot + "/")) continue;
+      rel = name.slice((workRoot + "/").length);
+    } else {
+      // Legacy/raw archive: everything except browser/ becomes /work.
+      if(name === browserRoot || name.startsWith(browserRoot + "/")) continue;
+      rel = name;
+    }
+
+    rel = rel.replace(/^\/+|\/+$/g, "");
+    if(!rel) continue;
+
+    const virtualPath = "/work/" + rel;
+
+    if(entry.dir || rawName.endsWith("/")) {
+      dirs.push(virtualPath);
+    } else {
+      const bytes = await entry.async("uint8array");
+      files[virtualPath] = bytesToBase64(bytes);
+
+      let parent = virtualPath.slice(0, virtualPath.lastIndexOf("/"));
+      while(parent && parent.startsWith("/work")) {
+        dirs.push(parent);
+        if(parent === "/work") break;
+        parent = parent.slice(0, parent.lastIndexOf("/"));
+      }
+    }
+  }
+
+  const snapshot = {
+    version: 2,
+    encoding: "base64",
+    dirs: [...new Set(dirs)].sort((a,b) => a.length - b.length),
+    files
+  };
+
+  const browserStorageEntry = entries.find(x => x.name === browserRoot + "/localStorage.json");
+  if(browserStorageEntry) {
+    const browserStorage = JSON.parse(await browserStorageEntry.entry.async("string"));
+    if(browserStorage && typeof browserStorage === "object") {
+      const remove = [];
+      for(let i=0; i<localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if(k && k.startsWith("iter-browser-") && k !== FSKEY)
+          remove.push(k);
+      }
+      for(const k of remove) localStorage.removeItem(k);
+
+      for(const [k, value] of Object.entries(browserStorage)) {
+        if(k.startsWith("iter-browser-") && k !== FSKEY && k !== "iter-browser-verbatim-import")
+          localStorage.setItem(k, String(value));
+      }
+    }
+  }
+
+  localStorage.setItem(FSKEY, JSON.stringify(snapshot));
+  localStorage.setItem("iter-browser-verbatim-import", "1");
+
+  stopRequested = true;
+  location.reload();
+}
+
+exportApp.addEventListener("click", async () => {
+  exportApp.disabled = true;
+  try {
+    await exportPortableState();
+    out("\n[exported complete browser state]\n");
+  } catch(e) {
+    out("\n[export failed] " + String(e?.message ?? e) + "\n");
+  } finally {
+    exportApp.disabled = false;
+    input.focus();
+  }
+});
+
+importApp.addEventListener("click", () => {
+  if(iterRunning) {
+    if(!confirm("Import replaces the complete Iter browser state, then reloads. Continue?"))
+      return;
+  }
+  importFile.value = "";
+  importFile.click();
+});
+
+importFile.addEventListener("change", async () => {
+  const file = importFile.files?.[0];
+  if(!file) return;
+
+  importApp.disabled = true;
+  try {
+    if(!iterRunning) {
+      if(!confirm("Replace the complete current Iter browser state with this ZIP?"))
+        return;
+    }
+    await importPortableState(file);
+  } catch(e) {
+    out("\n[import failed] " + String(e?.message ?? e) + "\n");
+    importApp.disabled = false;
+    input.focus();
+  }
+});
+
+resetApp.addEventListener('click', () => {
+  const msg = iterRunning
+    ? 'Iter is currently running. Delete all persisted files/settings and reload?'
+    : 'Delete all persisted files and settings for this app and reload?';
+  if(!confirm(msg)) return;
+  stopRequested = true;
+  clearPersistedState();
+  location.reload();
+});
+
+function snapshotWork() {
+  const files = {};
+  const dirs = ["/work"];
+
+  function walk(d) {
+    for(const n of mp.FS.readdir(d)) {
+      if(n === "." || n === "..") continue;
+      const p = (d === "/" ? "" : d) + "/" + n;
+      const st = mp.FS.stat(p);
+      if(mp.FS.isDir(st.mode)) {
+        if(p.startsWith("/work")) dirs.push(p);
+        walk(p);
+      } else if(p.startsWith("/work/")) {
+        files[p] = bytesToBase64(new Uint8Array(mp.FS.readFile(p)));
+      }
+    }
+  }
+
+  walk("/work");
+  return { version: 2, encoding: "base64", dirs, files };
+}
+
+function persist() {
+  if(!mp) return;
+  try {
+    localStorage.setItem(FSKEY, JSON.stringify(snapshotWork()));
+    scheduleFileRefresh();
+  } catch(e) {
+    console.warn("filesystem persist failed", e);
+  }
+}
+
+function restore() {
+  try {
+    const raw = localStorage.getItem(FSKEY);
+    if(!raw) return;
+
+    const saved = JSON.parse(raw);
+
+    // Current binary-safe format.
+    if(saved && saved.version === 2 && saved.files) {
+      for(const d of (saved.dirs || []).sort((a,b) => a.length - b.length))
+        mkdirp(d);
+
+      for(const [p, b64] of Object.entries(saved.files)) {
+        mkdirp(p.slice(0, p.lastIndexOf("/")));
+        mp.FS.writeFile(p, base64ToBytes(b64));
+      }
+      return;
+    }
+
+    // Backward compatibility with earlier text-only snapshots:
+    // {"/work/file.txt": "contents", ...}
+    if(saved && typeof saved === "object") {
+      for(const [p, text] of Object.entries(saved)) {
+        if(!p.startsWith("/work/")) continue;
+        mkdirp(p.slice(0, p.lastIndexOf("/")));
+        mp.FS.writeFile(p, enc.encode(String(text)));
+      }
+    }
+  } catch(e) {
+    console.warn("filesystem restore failed", e);
+  }
+}
+
+function seed(p,s) { if(!exists(p)) write(p,s); }
+// Shared filesystem adapter: just-bash operates directly on MicroPython's MEMFS.
+class MicroPythonFs {
+  resolvePath(base, target) {
+    target = String(target || "");
+    return target.startsWith("/") ? norm(target) : norm(String(base || "/") + "/" + target);
+  }
+
+  getAllPaths() {
+    const paths = ["/"];
+    const walk = dir => {
+      let names;
+      try { names = mp.FS.readdir(dir); } catch { return; }
+      for (const name of names) {
+        if (name === "." || name === "..") continue;
+        const p = (dir === "/" ? "" : dir) + "/" + name;
+        paths.push(p);
+        try {
+          const st = mp.FS.lstat ? mp.FS.lstat(p) : mp.FS.stat(p);
+          if (mp.FS.isDir(st.mode)) walk(p);
+        } catch {}
+      }
+    };
+    walk("/");
+    return paths;
+  }
+
+  async exists(p) {
+    try {
+      if (mp.FS.lstat) mp.FS.lstat(norm(p)); else mp.FS.stat(norm(p));
+      return true;
+    } catch { return false; }
+  }
+
+  _stat(p, follow=true) {
+    p = norm(p);
+
+    let st;
+    try {
+      st = (!follow && mp.FS.lstat) ? mp.FS.lstat(p) : mp.FS.stat(p);
+    } catch (e) {
+      const message = String(e?.message ?? e);
+      const errno = Number(e?.errno);
+      let missing = errno === 44 || message.includes("ENOENT") || message.toLowerCase().includes("no such file");
+
+      // Emscripten FS often throws an opaque ErrnoError across the WASM proxy.
+      // Ask the filesystem directly whether the path exists so just-bash gets
+      // the ENOENT semantics required by its identity checks.
+      if(!missing && mp.FS.analyzePath) {
+        try { missing = !mp.FS.analyzePath(p).exists; } catch {}
+      }
+
+      if(missing)
+        throw new Error("ENOENT: no such file or directory, stat '" + p + "'");
+      throw e;
+    }
+
+    const isDirectory = mp.FS.isDir(st.mode);
+    const isFile = mp.FS.isFile ? mp.FS.isFile(st.mode) : !isDirectory;
+    const isSymbolicLink = mp.FS.isLink ? mp.FS.isLink(st.mode) : false;
+    let mtime = st.mtime;
+    if (!(mtime instanceof Date)) {
+      const n = Number(mtime || Date.now());
+      mtime = new Date(n < 1e12 ? n * 1000 : n);
+    }
+
+    const result = {
+      isFile, isDirectory, isSymbolicLink,
+      mode: Number(st.mode || (isDirectory ? 0o755 : 0o644)),
+      size: Number(st.size || 0),
+      mtime
+    };
+
+    // just-bash prefers an alias-resistant identity. Emscripten's node id is
+    // stable for the life of the mounted filesystem and is better than
+    // returning undefined/NaN dev+ino fields.
+    try {
+      const lookup = mp.FS.lookupPath(p, { follow });
+      if(lookup?.node?.id !== undefined)
+        result.identity = "emscripten:" + String(lookup.node.id);
+    } catch {}
+
+    if(result.identity === undefined) {
+      const dev = Number(st.dev);
+      const ino = Number(st.ino);
+      if(Number.isFinite(dev) && Number.isFinite(ino)) {
+        result.dev = dev;
+        result.ino = ino;
+      }
+    }
+
+    return result;
+  }
+
+  async stat(p) { return this._stat(p, true); }
+  async lstat(p) { return this._stat(p, false); }
+
+  async realpath(p) {
+    p = norm(p);
+    mp.FS.stat(p);
+    try {
+      const r = mp.FS.lookupPath(p, { follow:true });
+      return r?.path ? norm(r.path) : p;
+    } catch { return p; }
+  }
+
+  async readFileBuffer(p) {
+    const st = this._stat(p);
+    if (st.isDirectory) throw new Error("EISDIR: " + p);
+    return new Uint8Array(mp.FS.readFile(norm(p)));
+  }
+
+  async readFile(p) { return dec.decode(await this.readFileBuffer(p)); }
+
+  async readdir(p) {
+    const st = this._stat(p);
+    if (!st.isDirectory) throw new Error("ENOTDIR: " + p);
+    return mp.FS.readdir(norm(p)).filter(x => x !== "." && x !== "..");
+  }
+
+  async readdirWithFileTypes(p) {
+    const base = norm(p);
+    return (await this.readdir(base)).map(name => {
+      const q = (base === "/" ? "" : base) + "/" + name;
+      const st = this._stat(q, false);
+      return { name, isFile:st.isFile, isDirectory:st.isDirectory, isSymbolicLink:st.isSymbolicLink };
+    });
+  }
+
+  async writeFile(p, content) {
+    p = norm(p);
+    const bytes = typeof content === "string" ? enc.encode(content) : new Uint8Array(content);
+    mp.FS.writeFile(p, bytes);
+    persist();
+  }
+
+  async appendFile(p, content) {
+    p = norm(p);
+    const add = typeof content === "string" ? enc.encode(content) : new Uint8Array(content);
+    let old = new Uint8Array(0);
+    try { old = new Uint8Array(mp.FS.readFile(p)); } catch {}
+    const all = new Uint8Array(old.length + add.length);
+    all.set(old); all.set(add, old.length);
+    mp.FS.writeFile(p, all);
+    persist();
+  }
+
+  async mkdir(p, options={}) {
+    p = norm(p);
+    if (options?.recursive) mkdirp(p); else mp.FS.mkdir(p);
+    persist();
+  }
+
+  _rmTree(p) {
+    p = norm(p);
+    const st = mp.FS.lstat ? mp.FS.lstat(p) : mp.FS.stat(p);
+    if (mp.FS.isDir(st.mode)) {
+      for (const n of mp.FS.readdir(p)) {
+        if (n === "." || n === "..") continue;
+        this._rmTree((p === "/" ? "" : p) + "/" + n);
+      }
+      mp.FS.rmdir(p);
+    } else mp.FS.unlink(p);
+  }
+
+  async rm(p, options={}) {
+    p = norm(p);
+    try {
+      const st = mp.FS.lstat ? mp.FS.lstat(p) : mp.FS.stat(p);
+      if (mp.FS.isDir(st.mode)) {
+        if (!options?.recursive) throw new Error("EISDIR: " + p);
+        this._rmTree(p);
+      } else mp.FS.unlink(p);
+      persist();
+    } catch (e) {
+      if (!options?.force) throw e;
+    }
+  }
+
+  async cp(src, dest, options={}) {
+    src = norm(src); dest = norm(dest);
+    const st = this._stat(src, false);
+    if (st.isDirectory) {
+      if (!options?.recursive) throw new Error("EISDIR: " + src);
+      mkdirp(dest);
+      for (const n of await this.readdir(src)) {
+        await this.cp(
+          (src === "/" ? "" : src) + "/" + n,
+          (dest === "/" ? "" : dest) + "/" + n,
+          {recursive:true}
+        );
+      }
+    } else mp.FS.writeFile(dest, mp.FS.readFile(src));
+    persist();
+  }
+
+  async mv(src, dest) {
+    mp.FS.rename(norm(src), norm(dest));
+    persist();
+  }
+
+  async chmod(p, mode) {
+    if (mp.FS.chmod) mp.FS.chmod(norm(p), Number(mode));
+  }
+
+  async symlink(target, linkPath) {
+    if (!mp.FS.symlink) throw new Error("ENOSYS: symlink");
+    mp.FS.symlink(String(target), norm(linkPath));
+    persist();
+  }
+
+  async link(existingPath, newPath) {
+    const st = this._stat(existingPath);
+    if (!st.isFile) throw new Error("ENOSYS: hard-link non-file");
+    mp.FS.writeFile(norm(newPath), mp.FS.readFile(norm(existingPath)));
+    persist();
+  }
+
+  async readlink(p) {
+    if (!mp.FS.readlink) throw new Error("ENOSYS: readlink");
+    return String(mp.FS.readlink(norm(p)));
+  }
+
+  async utimes(p, atime, mtime) {
+    if (mp.FS.utime) mp.FS.utime(norm(p), atime, mtime);
+  }
+}
+
+function pythonPayload(args, ctx) {
+  const argv = Array.from(args, String);
+  if (!argv.length) return {error:'python3: use "python3 FILE" or "python3 -c CODE"'};
+  if (argv[0] === "-c") {
+    return {
+      code:argv.slice(1).join(" "),
+      filename:"<string>",
+      argv:["-c", ...argv.slice(2)],
+      cwd:String(ctx.cwd || "/work")
+    };
+  }
+  return {
+    code:null,
+    filename:bashFs.resolvePath(String(ctx.cwd || "/work"), argv[0]),
+    argv,
+    cwd:String(ctx.cwd || "/work")
+  };
+}
+
+async function runPythonPayload(payload, ctx, fromPython=false) {
+  if (payload.error) return {stdout:"", stderr:payload.error+"\n", exitCode:2};
+
+  let code = payload.code;
+  if (code == null) {
+    try { code = await ctx.fs.readFile(payload.filename); }
+    catch (e) { return {stdout:"", stderr:"python3: "+String(e?.message ?? e)+"\n", exitCode:1}; }
+  }
+
+  // If MicroPython called Bash, avoid recursively entering the same WASM VM.
+  if (fromPython) {
+    return {
+      stdout:"__ITER_PYTHON__\n"+JSON.stringify({
+        code, filename:payload.filename, argv:payload.argv, cwd:payload.cwd
+      }),
+      stderr:"",
+      exitCode:0
+    };
+  }
+
+  pyCapture = {stdout:[], stderr:[]};
+  try {
+    const wrapper =
+      "import os, sys\n" +
+      "_jb_cwd=os.getcwd()\n" +
+      "_jb_had_argv=hasattr(sys,'argv')\n" +
+      "_jb_argv=getattr(sys,'argv',None)\n" +
+      "try:\n" +
+      " os.chdir(" + JSON.stringify(payload.cwd) + ")\n" +
+      " try:\n  sys.argv=" + JSON.stringify(payload.argv) + "\n except Exception:\n  pass\n" +
+      " exec(" + JSON.stringify(code) + ", {'__name__':'__main__','__file__':" + JSON.stringify(payload.filename) + "})\n" +
+      "finally:\n" +
+      " os.chdir(_jb_cwd)\n" +
+      " if _jb_had_argv:\n  try:\n   sys.argv=_jb_argv\n  except Exception:\n   pass\n" +
+      " else:\n  try:\n   delattr(sys,'argv')\n  except Exception:\n   pass\n";
+    await mp.runPythonAsync(wrapper);
+    return {stdout:pyCapture.stdout.join(""), stderr:pyCapture.stderr.join(""), exitCode:0};
+  } catch (e) {
+    return {
+      stdout:pyCapture.stdout.join(""),
+      stderr:pyCapture.stderr.join("")+String(e?.message ?? e)+"\n",
+      exitCode:1
+    };
+  } finally {
+    pyCapture = null;
+    persist();
+  }
+}
+
+function makePythonCommand(name, fromPython) {
+  return defineCommand(name, async (args, ctx) => {
+    // Iter already owns the single MicroPython VM while it is running.
+    // A user-side live shell must not recursively call runPythonAsync().
+    if (!fromPython && iterRunning) {
+      return {
+        stdout:"",
+        stderr:name+": unavailable from live shell while Iter is running (the MicroPython VM is busy)\n",
+        exitCode:1
+      };
+    }
+    return runPythonPayload(pythonPayload(args, ctx), ctx, fromPython);
+  });
+}
+
+function newBash(fromPython=false) {
+  return new Bash({
+    fs:bashFs,
+    cwd:"/work",
+    env:{
+      USER:"iter", LOGNAME:"iter", HOME:"/work", SHELL:"/bin/bash",
+      HOSTNAME:"browser", TERM:"xterm", PATH:"/bin:/usr/bin:/work"
+    },
+    network:{dangerouslyAllowFullInternetAccess:true},
+    customCommands:[
+      makePythonCommand("python3", fromPython),
+      makePythonCommand("python", fromPython)
+    ]
+  });
+}
+
+async function runBash(command, fromPython=false) {
+  if(fromPython) {
+    const result = await newBash(true).exec(String(command), {cwd:"/work/iter", rawScript:true});
+    persist();
+    return String(result.stdout || "") + String(result.stderr || "");
+  }
+
+  try {
+    const st = mp.FS.stat(terminalCwd);
+    if(!mp.FS.isDir(st.mode)) terminalCwd = "/work";
+  } catch {
+    terminalCwd = "/work";
+  }
+
+  const id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+  const cwdFile = "/tmp/.iter-cwd-" + id;
+  const script =
+    String(command) +
+    "\n__iter_status=$?\npwd > " + JSON.stringify(cwdFile) +
+    "\nexit $__iter_status";
+
+  const result = await newBash(false).exec(script, {cwd:terminalCwd, rawScript:true});
+
+  try {
+    const cwd = dec.decode(mp.FS.readFile(cwdFile)).trim();
+    if(cwd.startsWith("/work")) terminalCwd = cwd;
+  } catch {}
+  try { mp.FS.unlink(cwdFile); } catch {}
+
+  saveUiState();
+  persist();
+  return String(result.stdout || "") + String(result.stderr || "");
+}
+
+
+async function captureSelfScreenshot() {
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  const canvas = await html2canvas(document.body, {
+    backgroundColor: "#111",
+    useCORS: true,
+    logging: false,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
+    windowWidth: window.innerWidth,
+    windowHeight: window.innerHeight
+  });
+
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+  const id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())).replace(/[^A-Za-z0-9_-]/g, "_");
+  const dir = "/work/iter/_screenshots";
+  mkdirp(dir);
+
+  const record = {
+    id,
+    path: dir + "/" + id + ".json",
+    mime: "image/jpeg",
+    width: canvas.width,
+    height: canvas.height,
+    captured_at: new Date().toISOString(),
+    data_url: dataUrl
+  };
+
+  mp.FS.writeFile(record.path, enc.encode(JSON.stringify(record)));
+  persist();
+
+  return JSON.stringify({
+    id: record.id,
+    path: record.path,
+    mime: record.mime,
+    width: record.width,
+    height: record.height,
+    captured_at: record.captured_at
+  });
+}
+
+async function startIter() {
+  if(iterRunning) return;
+  stopRequested=false; iterRunning=true;
+  start.disabled=true; stop.disabled=false;
+  setStatus('running', true);
+  out('\n[Iter started]\n');
+  try {
+    mp.FS.chdir('/work/iter');
+    await mp.runPythonAsync(read('/work/iter/iter.py'));
+  }
+  catch(e) { out('\n[Iter crashed] '+(e?.stack||e)+'\n'); }
+  finally {
+    try { mp.FS.chdir('/work'); } catch {}
+    iterRunning=false;
+    stop.disabled=true;
+    start.disabled=false;
+    setStatus('stopped', false);
+    persist();
+  }
+}
+
+
+// --------------------------------------------------------------------
+// Hidden PeTTa runtime for tools/metta.py.
+// Mirrors the supplied PeTTaWeb flow: SWIPL -> silent/working_dir ->
+// consult petta.pl -> metta(JSON-stringified-code). No PeTTa UI is added.
+// --------------------------------------------------------------------
+const PETTA_SWIPL_URL = "http://91.203.212.130/pettaweb/swipl-bundle.js";
+const PETTA_PL_URL = "http://91.203.212.130/pettaweb/petta.pl";
+let pettaRuntimePromise = null;
+let pettaProlog = null;
+let pettaOutputCapture = null;
+let pettaExecutionQueue = Promise.resolve();
+
+function loadPettaScript(src) {
+  if(typeof globalThis.SWIPL === "function")
+    return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-iter-petta-swipl="1"]');
+    if(existing) {
+      existing.addEventListener("load", () => resolve(), {once:true});
+      existing.addEventListener("error", () => reject(new Error("failed to load PeTTa SWI-Prolog bundle")), {once:true});
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.iterPettaSwipl = "1";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("failed to load " + src));
+    document.head.appendChild(script);
+  });
+}
+
+async function ensurePettaRuntime() {
+  if(pettaRuntimePromise) return pettaRuntimePromise;
+
+  pettaRuntimePromise = (async () => {
+    await loadPettaScript(PETTA_SWIPL_URL);
+
+    if(typeof globalThis.SWIPL !== "function")
+      throw new Error("SWIPL was not defined by " + PETTA_SWIPL_URL);
+
+    const module = await globalThis.SWIPL({
+      on_output: line => {
+        if(pettaOutputCapture)
+          pettaOutputCapture.push(String(line));
+      }
+    });
+
+    pettaProlog = module.prolog;
+    if(!pettaProlog)
+      throw new Error("SWI-Prolog WASM initialized without module.prolog");
+
+    // Same initialization used by the supplied PeTTaWeb.
+    pettaProlog.query("asserta(silent(true)).").once();
+    pettaProlog.query('asserta(working_dir("")).').once();
+
+    // In PeTTaWeb this is consult("petta.pl").  This Iter HTML normally runs
+    // from file://, so use the same PeTTaWeb resource as an absolute URL.
+    await pettaProlog.consult(PETTA_PL_URL);
+
+    // Same readiness probe used by the supplied PeTTaWeb.
+    pettaProlog.query('metta("!(42)").').once();
+
+    return pettaProlog;
+  })();
+
+  try {
+    return await pettaRuntimePromise;
+  } catch(e) {
+    pettaRuntimePromise = null;
+    pettaProlog = null;
+    throw e;
+  }
+}
+
+async function runPettaMetta(code) {
+  const execute = async () => {
+    const prolog = await ensurePettaRuntime();
+    const captured = [];
+    pettaOutputCapture = captured;
+
+    try {
+      // Same execution call as the supplied PeTTaWeb:
+      // Prolog.query("metta(" + JSON.stringify(code) + ").").once()
+      prolog.query("metta(" + JSON.stringify(String(code)) + ").").once();
+    } finally {
+      pettaOutputCapture = null;
+    }
+
+    const cleanLines = [];
+    for(const chunk of captured) {
+      for(const rawLine of String(chunk).split(/\r?\n/)) {
+        const line = rawLine.replace(/\x1b\[[0-9;]*m/g, "").trim();
+        if(line) cleanLines.push(line);
+      }
+    }
+
+    const results = [];
+    for(const line of cleanLines) {
+      const match = line.match(/^Result:\s*(.*)$/);
+      if(match) results.push(match[1]);
+    }
+
+    if(results.length)
+      return results.join("\n");
+
+    const fallback = cleanLines.join("\n").trim();
+    return fallback || "done";
+  };
+
+  // Iter invokes tools serially today, but keep the shared Prolog engine safe
+  // if browser-side calls ever overlap.
+  pettaExecutionQueue = pettaExecutionQueue.then(execute, execute);
+  return pettaExecutionQueue;
+}
+
+mp = await MP.loadMicroPython({
+  linebuffer:true,
+  stdout:s=>{
+    const text=String(s)+'\n';
+    if(pyCapture) pyCapture.stdout.push(text); else out(text);
+  },
+  stderr:s=>{
+    const text=String(s)+'\n';
+    if(pyCapture) pyCapture.stderr.push(text); else out(text);
+  }
+});
+
+mp.registerJsModule('bridge', {
+  config:()=>JSON.stringify({
+    base_url:String(endpoint.value || '').trim().replace(/\/+$/, ''),
+    model:model.value,
+    api_key:key.value
+  }),
+  session_id:()=>crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+  receive:()=>inbox.shift() ?? '',
+  send:message=>{ addChat('iter', String(message), 'terminal'); return 'sent'; },
+  chat_in:(channel,message)=>{ addChat('user', String(message), String(channel||'channel')); return true; },
+  chat_out:(channel,message)=>{ addChat('iter', String(message), String(channel||'channel')); return true; },
+  screenshot:async ()=>{
+    try {
+      return await captureSelfScreenshot();
+    } catch(e) {
+      return '__ITER_SCREENSHOT_ERROR__\n' + String(e?.message ?? e);
+    }
+  },
+  shell:async command=>{
+    try {
+      return await runBash(String(command), true);
+    } catch(e) {
+      return '__ITER_SHELL_ERROR__\n' + String(e?.message ?? e);
+    }
+  },
+  metta:async code=>{
+    try {
+      return await runPettaMetta(String(code));
+    } catch(e) {
+      return '__ITER_METTA_ERROR__\n' + String(e?.message ?? e);
+    }
+  },
+  persist:()=>{persist(); return true;},
+  sleep:ms=>new Promise(resolve=>setTimeout(resolve,Number(ms)||0)),
+  should_stop:()=>stopRequested,
+  llm:async(url,_apiKey,payload,session)=>{
+    // Normalize accidental duplicate slashes after the URL scheme. This avoids
+    // redirects such as /api/v1//chat/completions, where auth can be lost.
+    let target = String(url).trim();
+    target = target.replace(/([^:]\/)\/{2,}/g, '$1');
+
+    const uiKey = String(key.value || '').trim();
+    const passedKey = String(_apiKey || '').trim();
+    const apiKey =
+      (uiKey && uiKey !== 'dummy') ? uiKey :
+      (passedKey && passedKey !== 'dummy') ? passedKey : '';
+
+    const isOpenRouter = target.includes('openrouter.ai');
+    if(isOpenRouter && !apiKey)
+      throw new Error('OpenRouter API key missing: paste a real sk-or-v1-... key in the password field');
+
+    // Use a plain object so the exact headers supplied to fetch are unambiguous.
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    if(apiKey)
+      headers['Authorization'] = 'Bearer ' + apiKey;
+
+    // Local Iter/vMLX metadata only. Never send these to OpenRouter.
+    if(!isOpenRouter) {
+      headers['X-APC-Tenant'] = 'iter';
+      headers['x-session-id'] = String(session);
+    }
+
+    const r = await fetch(target, {
+      method: 'POST',
+      mode: 'cors',
+      headers,
+      body: String(payload)
+    });
+
+    const text = await r.text();
+    if(!r.ok) {
+      // Never print the secret itself. These diagnostics make auth/redirect
+      // regressions obvious instead of producing an unexplained 401.
+      const authSet = Object.prototype.hasOwnProperty.call(headers, 'Authorization');
+      const finalUrl = String(r.url || target);
+      throw new Error(
+        'HTTP '+r.status+': '+text.slice(0,1000) +
+        ' [auth_header_set='+authSet+
+        ', key_length='+apiKey.length+
+        ', requested='+target+
+        ', final='+finalUrl+
+        ', redirected='+String(!!r.redirected)+']'
+      );
+    }
+    return text;
+  }
+});
+
+const hadPersistedFs = localStorage.getItem(FSKEY) !== null;
+
+mkdirp('/work'); mp.FS.chdir('/work'); restore();
+const verbatimImport = localStorage.getItem("iter-browser-verbatim-import") === "1";
+if(verbatimImport) localStorage.removeItem("iter-browser-verbatim-import");
+
+if(!verbatimImport && !hadPersistedFs) {
+mkdirp('/work/iter');
+seed('/work/iter/iter.py', "");
+const OLD_STOCK_PROMPT = "You are an Iter agent ran by iter.py in a browser.\nUser can only see your send commands for communication!\nPrioritize the newest unresolved user request, and always report intermediate task progress and its final outcome back using send.\nYou can create memories as .txt files in ./memory/. The included files are automatically included in your context.\nYou evolve through reprogramming.\nOnly apply reprogramming if the user explicitly asks for a new feature.\nNever destroy continuity, memory, or the running Iter process.\nChannels in ./channels/ may implement receive() and/or send(message); use the send tool's optional channel argument to choose an outbound channel.\n\nBROWSER RUNTIME:\nYou run inside MicroPython/WASM in a browser. You can directly access JavaScript and browser APIs with `import js`, including `js.window`, `js.document`, `js.navigator`, `js.localStorage`, `js.console`, and `await js.fetch(...)`. JavaScript Promises generally need `await`.\n\nYou may create tools, channels, and transformations that use browser APIs directly. For example:\n    import js\n    title = js.document.title\n    element = js.document.querySelector(\"#id\")\n    response = await js.fetch(\"https://example.com\")\n\nThe `bridge` module exposes Iter-specific browser integration such as shell, screenshot, persistence, terminal communication, and LLM transport. Prefer `import js` for general browser APIs and `import bridge` for Iter-specific facilities.\n\nBrowser security rules still apply: CORS, permissions, secure-context requirements, and user-gesture requirements may restrict some APIs. You do not have host OS access unless exposed through the browser environment.";
+const PREVIOUS_STOCK_PROMPT = "You are an Iter agent ran by iter.py.\nUser can only see your send commands for communication!\nPrioritize the newest unresolved user request, and always report intermediate task progress and its final outcome back using send.\nYou can create memories as .txt files in ./memory/. The included files are automatically included in your context.\nTo add ./tools/, ./channels/, and context ./transformations/ to yourself, please see reprogramming.txt.\nOnly do so if the user explicitly asks for a new feature!\n\n#ENVIRONMENT:\nYou run in MicroPython/WASM inside a browser. Home ~ is /work. Your working directory is ~/iter = /work/iter, so relative paths such as ./tools/, ./channels/, ./transformations/, ./memory/, prompt.txt, reprogramming.txt, and experience.json resolve there.\nYou can directly access JavaScript and browser APIs through `import js`, including `js.window`, `js.document`, `js.navigator`, `js.localStorage`, `js.console`, and `await js.fetch(...)`. You may inspect and modify your own page/DOM and use browser APIs directly. JavaScript Promises generally need `await`.\nUse `import bridge` for Iter-specific browser integration such as shell, screenshot, persistence, terminal communication, and LLM transport.\nBrowser restrictions still apply, including CORS, permissions, secure-context requirements, and popup/user-gesture requirements.";
+const NEW_STOCK_PROMPT = "You are an Iter agent ran by iter.py.\nUser can only see your send commands for communication!\nPrioritize the newest unresolved user request, and always report intermediate task progress and its final outcome back using send.\nYou can create memories as .txt files in ./memory/. The included files are automatically included in your context.\nTo add ./tools/, ./channels/, and context ./transformations/ to yourself, please see reprogramming.txt.\nOnly do so if the user explicitly asks for a new feature!\n\n#ENVIRONMENT:\nYou run in MicroPython/WASM inside a browser. Home ~ is /work. Your working directory is ~/iter = /work/iter, so relative paths such as ./tools/, ./channels/, ./transformations/, ./memory/, prompt.txt, reprogramming.txt, and experience.json resolve there.\nYou can directly access JavaScript and browser APIs through `import js`, including `js.window`, `js.document`, `js.navigator`, `js.localStorage`, `js.console`, and `await js.fetch(...)`. You may inspect and modify your own page/DOM and use browser APIs directly. JavaScript Promises generally need `await`.\nUse `import bridge` for Iter-specific browser integration such as shell, screenshot, persistence, terminal communication, and LLM transport.\nBrowser restrictions still apply, including CORS, permissions, secure-context requirements, and popup/user-gesture requirements.\nFor requested GUI content, use ./transformations/_gui_example.py as the template for modifying your browser DOM; create the requested GUI as a new transformation in ./transformations/ with a filename not beginning with _ so it is active.";
+if(!exists('/work/iter/prompt.txt') || read('/work/iter/prompt.txt') === OLD_STOCK_PROMPT || read('/work/iter/prompt.txt') === PREVIOUS_STOCK_PROMPT)
+  write('/work/iter/prompt.txt', NEW_STOCK_PROMPT);
+seed('/work/iter/reprogramming.txt', "#CHANNELS:\nCommunication channels are hot-reloaded from channels/*.py and expose receive() and optionally send(content).\nIn this browser version, channels execute inside the same MicroPython runtime. Persistent connections or state should use browser APIs, files, or bridge facilities rather than launching external OS processes; see channels/_example.py.\n#TOOLS:\nYou can create tools as .py files in ./tools/. New tools are available in the next agent cycle. Format:\nDESCRIPTION = \"How the tool should be described\"\ndef run():\n    # any code\n    return VALUE\nBrowser-backed tools may use async def run() when awaiting browser/bridge APIs.\n#TRANSFORMATIONS:\nYou can create transformations as .py files in ./transformations/ (executed in alphabetical order) to modify messages and tools before each model call. It must expose:\nDESCRIPTION = \"What the context transformation does\"\ndef transform(messages, tools):\n    return messages, tools\nExample use cases:\n- inspect messages\n- write transcript/checkpoints\n- detect previous tool calls/results\n- maintain counters in files\n- check timestamps/deadlines\n- inject additional context\n- alter which tools are exposed\n#LESSONS:\nIf name starts with underline, it is not considered. Can be used to de-activate items.");
+mkdirp('/work/iter/tools'); mkdirp('/work/iter/channels'); mkdirp('/work/iter/transformations');
+
+// OMEGA5 MicroPython tool/transformation bundle.
+// Seeded before stock fallbacks so these exact ZIP versions are used
+// on a fresh/reset filesystem, while existing persisted files remain untouched.
+seed("/work/iter/tools/_petta_db.py", "");
+seed("/work/iter/tools/chroma_query.py", "");
+seed("/work/iter/tools/contradict.py", "");
+seed("/work/iter/tools/episodes.py", "");
+seed("/work/iter/tools/forget.py", "");
+seed("/work/iter/tools/formalize_metta.py", "");
+seed("/work/iter/tools/link_episode.py", "");
+seed("/work/iter/tools/memory_update.py", "");
+seed("/work/iter/tools/nop.py", "");
+seed("/work/iter/tools/petta_db.py", "");
+seed("/work/iter/tools/pin.py", "");
+seed("/work/iter/tools/remember.py", "");
+seed("/work/iter/tools/reminder.py", "");
+seed("/work/iter/tools/screenshot.py", "");
+seed("/work/iter/tools/search_transcript.py", "");
+seed("/work/iter/tools/send.py", "");
+seed("/work/iter/tools/shell.py", "");
+seed("/work/iter/tools/start_new_task.py", "");
+seed("/work/iter/tools/support.py", "");
+seed("/work/iter/tools/tool_reliability.py", "");
+seed("/work/iter/tools/unlink_episode.py", "");
+seed("/work/iter/tools/websearch.py", "");
+seed("/work/iter/tools/metta.py", "");
+seed("/work/iter/transformations/alarms.py", "");
+seed("/work/iter/transformations/append_last_transcript_lines.py", "");
+seed("/work/iter/transformations/atom_space_update.py", "");
+seed("/work/iter/transformations/dashboard_atomspace.py", "");
+seed("/work/iter/transformations/dashboard_context.py", "");
+seed("/work/iter/transformations/dashboard_gallery.py", "");
+seed("/work/iter/transformations/dashboard_runtime.py", "");
+seed("/work/iter/transformations/history.py", "");
+seed("/work/iter/transformations/screenshot.py", "");
+seed("/work/iter/transformations/tool_reliability_tracker.py", "");
+seed("/work/iter/transformations/transcript.py", "");
+seed("/work/iter/transformations/unbounded_log.py", "");
+seed('/work/iter/transformations/_gui_example.py', ""); mkdirp('/work/iter/memory');
+seed('/work/iter/tools/nop.py', "");
+const OLD_STOCK_SEND = "import bridge\nDESCRIPTION = \"Send a message to the user.\"\ndef run(message):\n    bridge.send(str(message))\n    return \"sent\"\n";
+const PREVIOUS_STOCK_SEND = "import os\n\nDESCRIPTION = \"Send a message through a communication channel. Defaults to terminal.\"\nasync def run(message, channel=\"terminal\"):\n    channel = str(channel)\n    if not channel or any(c not in \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-\" for c in channel):\n        raise ValueError(\"invalid channel name\")\n\n    path = \"channels/\" + channel + \".py\"\n    try:\n        with open(path, \"r\", encoding=\"utf-8\") as file:\n            source = file.read()\n    except OSError:\n        raise RuntimeError(\"unknown channel: \" + channel)\n\n    if \"def send(\" not in source:\n        raise RuntimeError(\"channel has no send(): \" + channel)\n\n    namespace = {\"__name__\": \"_channel_\" + channel, \"__file__\": path}\n    exec(source, namespace)\n    result = namespace[\"send\"](str(message))\n\n    # MicroPython coroutine objects are generator-like, so detect async from source.\n    if \"async def send(\" in source:\n        result = await result\n\n    return \"sent\" if result is None else str(result)\n";
+const NEW_STOCK_SEND = "";
+if(!exists('/work/iter/tools/send.py') ||
+   read('/work/iter/tools/send.py') === OLD_STOCK_SEND ||
+   read('/work/iter/tools/send.py') === PREVIOUS_STOCK_SEND)
+  write('/work/iter/tools/send.py', NEW_STOCK_SEND);
+const OLD_STOCK_SCREENSHOT = "import bridge\nimport json\nDESCRIPTION = \"Capture a screenshot of the current browser page/viewport and attach it for a vision-capable model.\"\nasync def run():\n    result = str(await bridge.screenshot())\n    err = \"__ITER_SCREENSHOT_ERROR__\\n\"\n    if result.startswith(err):\n        raise RuntimeError(result[len(err):])\n    json.loads(result)\n    return \"__ITER_SCREENSHOT__\\n\" + result\n";
+const NEW_STOCK_SCREENSHOT = "";
+if(!exists('/work/iter/tools/screenshot.py') || read('/work/iter/tools/screenshot.py') === OLD_STOCK_SCREENSHOT)
+  write('/work/iter/tools/screenshot.py', NEW_STOCK_SCREENSHOT);
+seed('/work/iter/transformations/screenshot.py', "");
+seed("/work/iter/tools/python.py", "");
+seed('/work/iter/tools/shell.py', "");
+seed('/work/iter/shell.py', "");
+const OLD_STOCK_TERMINAL = "import bridge\nDESCRIPTION = \"Browser terminal input channel\"\ndef receive():\n    return bridge.receive()\n";
+const NEW_STOCK_TERMINAL = "";
+if(!exists('/work/iter/channels/terminal.py') || read('/work/iter/channels/terminal.py') === OLD_STOCK_TERMINAL)
+  write('/work/iter/channels/terminal.py', NEW_STOCK_TERMINAL);
+persist();
+}
+
+
+// One-time repair for python.py lost by the earlier browser /work -> /work/iter migration.
+const PYTHON_TOOL_RESTORE_V9_KEY = "iter-browser-python-tool-restored-v9";
+const PYTHON_TOOL_RESTORE_V9_SOURCE = "";
+if(verbatimImport) {
+  // An imported filesystem is authoritative; record the migration as handled.
+  localStorage.setItem(PYTHON_TOOL_RESTORE_V9_KEY, "1");
+} else if(localStorage.getItem(PYTHON_TOOL_RESTORE_V9_KEY) !== "1") {
+  if(!exists("/work/iter/tools/python.py")) {
+    write("/work/iter/tools/python.py", PYTHON_TOOL_RESTORE_V9_SOURCE);
+    persist();
+  }
+  localStorage.setItem(PYTHON_TOOL_RESTORE_V9_KEY, "1");
+}
+
+
+// Repair only the exact known websearch stub in existing persisted installs.
+const OLD_WEBSEARCH_STUB = "import json\n\nDESCRIPTION = \"Search the web. Returns JSON array of results with title, url, snippet.\"\n\ndef run(query, max_results=10):\n    max_results = int(max_results)\n    # MicroPython environment has no networking modules (no urllib, socket, ssl, requests)\n    return json.dumps([{\n        \"title\": \"Web search unavailable\",\n        \"url\": \"\",\n        \"snippet\": \"No networking modules available in this environment (no urllib/socket/ssl/requests). Query was: \" + str(query)\n    }])\n";
+const NEW_WEBSEARCH_TOOL = "";
+if(!verbatimImport &&
+   exists('/work/iter/tools/websearch.py') &&
+   read('/work/iter/tools/websearch.py') === OLD_WEBSEARCH_STUB) {
+  write('/work/iter/tools/websearch.py', NEW_WEBSEARCH_TOOL);
+  persist();
+}
+
+bashFs = new MicroPythonFs();
+
+activity.textContent='Iter browser ready\n';
+terminalOutput.textContent='$ ';
+chatInput.disabled=false;
+sendChat.disabled=false;
+terminalInput.disabled=false;
+start.disabled=false;
+setStatus('stopped', false);
+refreshFileTree();
+if(!verbatimImport) restoreChat();
+else {
+  // Render an existing imported transcript without creating/migrating files.
+  if(exists(CHAT_PATH)) {
+    try {
+      for(const line of read(CHAT_PATH).split('\n')) {
+        if(!line.trim()) continue;
+        const item = JSON.parse(line);
+        if((item.role === 'user' || item.role === 'iter') && typeof item.text === 'string')
+          addChat(item.role, item.text, item.channel || 'terminal', false);
+      }
+    } catch(e) {
+      console.warn('imported chat transcript restore failed', e);
+    }
+  }
+}
+chatInput.focus();
+
+start.onclick=startIter;
+stop.onclick=()=>{
+  stopRequested=true;
+  stop.disabled=true;
+  setStatus('stopping…', true);
+  out('\n[stop requested]\n');
+};
+
+async function submitChat() {
+  const line=chatInput.value.trim();
+  if(!line) return;
+  chatInput.value='';
+  addChat('user', line, 'terminal');
+  inbox.push(line);
+
+  // Sending a chat message should be enough to wake/start Iter.
+  if(!iterRunning) startIter();
+  chatInput.focus();
+}
+
+sendChat.onclick=submitChat;
+chatInput.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey) {
+    e.preventDefault();
+    submitChat();
+  }
+});
+
+terminalInput.addEventListener('keydown', async e=>{
+  if(e.key==='ArrowUp') {
+    if(!terminalHistory.length) return;
+    e.preventDefault();
+
+    if(terminalHistoryIndex === terminalHistory.length)
+      terminalHistoryDraft = terminalInput.value;
+
+    if(terminalHistoryIndex > 0)
+      terminalHistoryIndex--;
+
+    terminalInput.value = terminalHistory[terminalHistoryIndex] || '';
+    terminalInput.setSelectionRange(terminalInput.value.length, terminalInput.value.length);
+    return;
+  }
+
+  if(e.key==='ArrowDown') {
+    if(!terminalHistory.length) return;
+    e.preventDefault();
+
+    if(terminalHistoryIndex < terminalHistory.length)
+      terminalHistoryIndex++;
+
+    terminalInput.value =
+      terminalHistoryIndex === terminalHistory.length
+        ? terminalHistoryDraft
+        : terminalHistory[terminalHistoryIndex];
+
+    terminalInput.setSelectionRange(terminalInput.value.length, terminalInput.value.length);
+    return;
+  }
+
+  if(e.key!=='Enter') return;
+  const command=terminalInput.value;
+  terminalInput.value='';
+
+  if(!command.trim()) {
+    terminalOut('\n$ ');
+    return;
+  }
+
+  if(terminalHistory[terminalHistory.length - 1] !== command) {
+    terminalHistory.push(command);
+    if(terminalHistory.length > 100)
+      terminalHistory = terminalHistory.slice(-100);
+  }
+  terminalHistoryIndex = terminalHistory.length;
+  terminalHistoryDraft = '';
+  saveUiState();
+
+  terminalOut(command + '\n');
+  try {
+    const result=await runBash(command,false);
+    if(result) terminalOut(result);
+  } catch(e) {
+    terminalOut(String(e?.message??e)+'\n');
+  }
+  terminalOut('$ ');
+  scheduleFileRefresh();
+  terminalInput.focus();
+});
+</script>
