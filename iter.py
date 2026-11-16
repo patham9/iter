@@ -135,8 +135,17 @@ def get_current_time():
 
 def receive():
     events = []
+    # The fullscreen TUI owns stdin; collect its completed input lines.
+    if log.terminal_ui_active():
+        while True:
+            line = log.poll_input()
+            if not line:
+                break
+            events.append("[terminal] " + line)
     paths = [path for path in sorted(Path("channels").glob("*.py")) if not path.name.startswith("_")]
     for path in paths:
+        if log.terminal_ui_active() and path.stem == "terminal":
+            continue  # Avoid a competing stdin reader.
         try:
             result = invoke_dynamic(path, "receive")
             if not result["ok"]:
