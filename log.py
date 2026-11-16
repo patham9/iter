@@ -2,6 +2,8 @@
 
 Linux/Unix interactive TTY: curses full-screen display with a fixed input bar,
 scrollable output, and an asynchronous input queue. Works in screen/tmux/SSH.
+The log supports mouse-wheel scrolling, a clickable/draggable in-pane scrollbar,
+and PageUp/PageDown. Mouse support depends on terminal and multiplexer settings.
 Everything sent to the LLM and all tool returns are controlled by iter.py;
 this module is display/input only. No third-party packages required.
 
@@ -213,6 +215,8 @@ _CURSOR = 0
 _HISTORY = []
 _HISTORY_INDEX = None
 _SCROLL = 0                         # number of visual rows above latest
+_LOG_DRAGGING = False                # dragging the log's own scrollbar
+_MOUSE_SCROLL_LINES = 3
 _SHUTDOWN = False
 _COLOR_PAIRS = {}
 _PIN_TITLE = "PINNED"
@@ -520,6 +524,16 @@ def _init_curses():
         _SCREEN.keypad(True)
         _SCREEN.nodelay(True)
         try:
+            mouse_events = (getattr(curses, "BUTTON4_PRESSED", 0) |
+                            getattr(curses, "BUTTON5_PRESSED", 0) |
+                            curses.BUTTON1_PRESSED | curses.BUTTON1_RELEASED |
+                            curses.BUTTON1_CLICKED |
+                            getattr(curses, "REPORT_MOUSE_POSITION", 0))
+            curses.mousemask(mouse_events)
+            curses.mouseinterval(0)
+        except (curses.error, AttributeError):
+            pass  # PageUp/PageDown always work when mouse reporting is unavailable.
+        try:
             curses.curs_set(1)
         except curses.error:
             pass
@@ -604,8 +618,72 @@ def _input_loop():
         time.sleep(0.025 if key is not None else 0.06)
 
 
+def _scroll_thumb(total_rows, visible_rows, scroll):
+    """Scrollbar thumb (height, zero-based top) for a bottom-relative scroll offset."""
+    if total_rows <= visible_rows or visible_rows <= 0:
+        return visible_rows, 0
+    max_scroll = total_rows - visible_rows
+    thumb_height = max(1, min(visible_rows, visible_rows * visible_rows // total_rows))
+    travel = visible_rows - thumb_height
+    thumb_top = round((max_scroll - min(max(0, scroll), max_scroll)) * travel / max_scroll)
+    return thumb_height, thumb_top
+
+
+def _handle_mouse():
+    """Wheel scrolls the pane under the pointer; click/drag the log scrollbar."""
+    global _SCROLL, _PIN_SCROLL, _LOG_DRAGGING
+    try:
+        _id, x, y, _z, buttons = curses.getmouse()
+    except curses.error:
+        return
+    height, width = _SCREEN.getmaxyx()
+    if height < 9 or width < 38:
+        return
+    limit = min(width - 1, _MAX_WIDTH)
+    layout = _pin_layout(limit)
+    left_width = layout[0] if layout else limit
+    top, bottom = 3, height - 5
+    visible = bottom - top + 1
+    log_total = len(_visual_rows(left_width - 2))
+    log_max = max(0, log_total - visible)
+    over_panel = bool(layout and x >= layout[2] and top <= y <= bottom)
+    wheel_up = bool(buttons & getattr(curses, "BUTTON4_PRESSED", 0))
+    wheel_down = bool(buttons & getattr(curses, "BUTTON5_PRESSED", 0))
+
+    if wheel_up or wheel_down:
+        step = _MOUSE_SCROLL_LINES if wheel_up else -_MOUSE_SCROLL_LINES
+        if over_panel:
+            pin_height = max(0, bottom - 6 + 1)
+            pin_total = len(_pin_rows(max(6, layout[3] - 1)))
+            _PIN_SCROLL = max(0, min(max(0, pin_total - pin_height), _PIN_SCROLL + step))
+        else:
+            _SCROLL = max(0, min(log_max, _SCROLL + step))
+        return
+
+    on_bar = x == left_width - 1 and top <= y <= bottom
+    pressed = bool(buttons & curses.BUTTON1_PRESSED)
+    clicked = bool(buttons & curses.BUTTON1_CLICKED)
+    released = bool(buttons & curses.BUTTON1_RELEASED)
+    moved = bool(buttons & getattr(curses, "REPORT_MOUSE_POSITION", 0))
+    if (pressed or clicked) and on_bar:
+        _LOG_DRAGGING = pressed
+    if (pressed or clicked) and on_bar or _LOG_DRAGGING and (moved or released):
+        thumb_height, _ = _scroll_thumb(log_total, visible, _SCROLL)
+        travel = visible - thumb_height
+        if travel and log_max:
+            position = max(0, min(travel, y - top - (thumb_height - 1) / 2))
+            _SCROLL = round(log_max * (1 - position / travel))
+        else:
+            _SCROLL = 0
+    if released:
+        _LOG_DRAGGING = False
+
+
 def _handle_key(key):
     global _COMPOSER, _CURSOR, _SCROLL, _HISTORY_INDEX, _PIN_VISIBLE, _PIN_SCROLL
+    if key == curses.KEY_MOUSE:
+        _handle_mouse()
+        return
     if isinstance(key, str):
         if key in ("\n", "\r"):
             message = _COMPOSER.strip()
@@ -721,7 +799,7 @@ def _render():
     # Log pane: content as well as labels is colored, according to event kind.
     top, bottom = 3, height - 5
     available = bottom - top + 1
-    visual = _visual_rows(left_width)
+    visual = _visual_rows(left_width - 2)
     max_scroll = max(0, len(visual) - available)
     scroll = min(_SCROLL, max_scroll)
     end = max(0, len(visual) - scroll)
@@ -734,7 +812,16 @@ def _render():
             _put(y, 13, name[:8].ljust(8), _attr(color, True))
         elif continuation:
             _put(y, 11, "│", _attr("muted"))
-        _put(y, 22, body, _attr(color, False), max(1, left_width - 22))
+        _put(y, 22, body, _attr(color, False), max(1, left_width - 23))
+
+    # Native terminal scrollback does not cover curses' fullscreen buffer.
+    # Draw a scrollbar that controls this pane's real scroll offset instead.
+    if max_scroll:
+        thumb_height, thumb_top = _scroll_thumb(len(visual), available, scroll)
+        for i in range(available):
+            selected = thumb_top <= i < thumb_top + thumb_height
+            _put(top + i, left_width - 1, "┃" if selected else "│",
+                 _attr("cyan" if selected else "muted"))
 
     # Right-hand pinned panel, wholly independent of scrolling event rows.
     if layout:
@@ -763,7 +850,7 @@ def _render():
     # Dedicated composer below log: never overwritten by output.
     _put(height-4, 0, "─" * limit, _attr("cyan"))
     _put(height-3, 2, "MESSAGE  ❯", _attr("cyan", True))
-    _put(height-3, 17, "Enter send · ↑↓ history · PgUp/PgDn logs · F2 panel · F3/F4 panel scroll",
+    _put(height-3, 17, "Enter send · ↑↓ history · Wheel/PgUp/PgDn logs · F2 panel · F3/F4 panel scroll",
          _attr("muted"), max(1, limit - 17))
     _put(height-2, 2, "❯", _attr("yellow", True))
     composer_width = max(1, limit - 6)
@@ -793,6 +880,12 @@ def _append(label, message, color="muted", detail=False):
     global _SCROLL
     message = _clean(message)
     with _LOCK:
+        if _ACTIVE and _SCROLL > 0 and _SCREEN is not None:
+            height, width = _SCREEN.getmaxyx()
+            limit = min(width - 1, _MAX_WIDTH)
+            layout = _pin_layout(limit)
+            left_width = layout[0] if layout else limit
+            _SCROLL += len(_wrap(message, max(6, left_width - 23)))
         _ROWS.append((_time_label(), str(label).upper(), message, color, detail))
         if _ACTIVE:
             _render()
