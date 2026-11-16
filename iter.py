@@ -17,30 +17,36 @@ from pathlib import Path
 # --------------------------------------------------------------------
 # 0. Configuration:
 # --------------------------------------------------------------------
-MAX_MEMORY_CHARS = 3000 #When memory turns into an index
-LLM_TIMEOUT = 600
-KEEP_REASONING_IN_EPISODE = True
-PRINT_CALLS = False
-MAX_TOOL_CALLS = 10
-MAX_TOOL_OUTPUT_CHARS = 5000
-MAX_EXPERIENCE_SIZE = 100   #20 percent
-RETAIN_EXPERIENCE_SIZE = 80 #jumps
-MAX_FAST_STEPS = 50
-SLOW_STEP_DELAY = 10
-ERROR_RECOVERY_TIME = 1 #after how long to retry when exception occurs
-RETURN_VALUE_PRESERVE = 0
-RETURN_VALUE_PRESERVE_MESSAGES = 10
-DEFAULT_DELAY = 0 #default delay added irregard of whether in slow mode
-MAX_TOKENS = 5000
-INIT_WAIT = 10
-MAX_TOOLS = 30
-MAX_SKILLS = 30 #Maximum number of Markdown skills listed to the agent
-MAX_CONTEXT_TRANSFORMATIONS = 30 #Maximum number of active context transformations
-MAX_TOOL_DESCRIPTION_CHARS = 500
-DYNAMIC_TIMEOUT = 5
+
+# --------------------------------------------------------------------
+# 0. Configuration:
+# --------------------------------------------------------------------
+MAX_MEMORY_CHARS = int(os.getenv("MAX_MEMORY_CHARS", "3000"))
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "600"))
+KEEP_REASONING_IN_EPISODE = os.getenv("KEEP_REASONING_IN_EPISODE", "True") == "True"
+PRINT_CALLS = os.getenv("PRINT_CALLS", "False") == "True"
+MAX_TOOL_CALLS = int(os.getenv("MAX_TOOL_CALLS", "10"))
+MAX_TOOL_OUTPUT_CHARS = int(os.getenv("MAX_TOOL_OUTPUT_CHARS", "5000"))
+MAX_EXPERIENCE_SIZE = int(os.getenv("MAX_EXPERIENCE_SIZE", "100"))
+RETAIN_EXPERIENCE_SIZE = int(os.getenv("RETAIN_EXPERIENCE_SIZE", "80"))
+MAX_FAST_STEPS = int(os.getenv("MAX_FAST_STEPS", "50"))
+SLOW_STEP_DELAY = float(os.getenv("SLOW_STEP_DELAY", "10"))
+ERROR_RECOVERY_TIME = float(os.getenv("ERROR_RECOVERY_TIME", "1"))
+RETURN_VALUE_PRESERVE = int(os.getenv("RETURN_VALUE_PRESERVE", "0"))
+RETURN_VALUE_PRESERVE_MESSAGES = int(os.getenv("RETURN_VALUE_PRESERVE_MESSAGES", "10"))
+DEFAULT_DELAY = float(os.getenv("DEFAULT_DELAY", "0"))
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "5000"))
+INIT_WAIT = float(os.getenv("INIT_WAIT", "10"))
+MAX_TOOLS = int(os.getenv("MAX_TOOLS", "30"))
+MAX_SKILLS = int(os.getenv("MAX_SKILLS", "30"))
+MAX_CONTEXT_TRANSFORMATIONS = int(os.getenv("MAX_CONTEXT_TRANSFORMATIONS", "30"))
+MAX_TOOL_DESCRIPTION_CHARS = int(os.getenv("MAX_TOOL_DESCRIPTION_CHARS", "500"))
+DYNAMIC_TIMEOUT = float(os.getenv("DYNAMIC_TIMEOUT", "5"))
 MODEL = os.getenv("LLM_MODEL", "mlx-community/gemma-4-26b-a4b-it-4bit")
 BASE_URL = os.getenv("BASE_URL", "http://192.168.64.1:2277/v1")
 API_KEY = os.getenv("AI_API_KEY", "dummy")
+TOOL_CHOICE = os.getenv("TOOL_CHOICE", "required")
+
 
 # --------------------------------------------------------------------
 # 1. Dynamic execution:
@@ -319,7 +325,7 @@ while True:
                 request_messages += [{"role": "user", "content": transformation_error}]
             log.llm_start()
             started = time.monotonic()
-            response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice="required", max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
+            response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice=TOOL_CHOICE, max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
             log.llm_complete(time.monotonic() - started, response)
             message = response.choices[0].message
             if message.content:
