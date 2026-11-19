@@ -1,5 +1,7 @@
 import inspect
 import json
+import re
+import os
 import sys
 import openai
 import importlib.util
@@ -53,7 +55,63 @@ def init_client(base_url, api_key, timeout):
 def exception_text(error):
     return f"{type(error).__name__}: {error}"
 
+# LLM call with refusal fallback: always tries the primary model first. If no usable
+# message is returned (refusal, empty message, content filter, or API error), the same
+# request is retried once with LLM_BACKUP_MODEL (if set).
+BACKUP_MODEL = os.getenv("LLM_BACKUP_MODEL", "")
+
+def is_refusal(response):
+    """True if the response did not return a usable LLM message."""
+    try:
+        choice = response.choices[0]
+        message = choice.message
+    except (AttributeError, IndexError, TypeError):
+        return True
+    if message is None:
+        return True
+    if str(getattr(choice, "finish_reason", "") or "").lower() in ("refusal", "content_filter"):
+        return True
+    if getattr(message, "refusal", None):
+        return True
+    return not (getattr(message, "content", None) or getattr(message, "tool_calls", None))
+
+def create_with_backup(client, model, backup_model=None, **kwargs):
+    """Returns (response, used_model). Primary first, backup if no message returned."""
+    backup_model = BACKUP_MODEL if backup_model is None else backup_model
+    use_backup = bool(backup_model) and backup_model != model
+    try:
+        response = client.chat.completions.create(model=model, **kwargs)
+        if not use_backup or not is_refusal(response):
+            return response, model
+    except Exception as error:
+        if not use_backup:
+            raise
+        try:
+            return client.chat.completions.create(model=backup_model, **kwargs), backup_model
+        except Exception:
+            raise error
+    return client.chat.completions.create(model=backup_model, **kwargs), backup_model
+
 def chat_completion(messages, tools, model, max_tokens): #messages and tools as JSON text, returns message_json finish_reason response usage
-    response = CLIENT.chat.completions.create(model=str(model), messages=json.loads(str(messages)), tools=json.loads(str(tools)), tool_choice="required", max_tokens=int(max_tokens), extra_body={ "enable_thinking": True})
+    response, used_model = create_with_backup(CLIENT, str(model), messages=json.loads(str(messages)), tools=json.loads(str(tools)), tool_choice="required", max_tokens=int(max_tokens), extra_body={ "enable_thinking": True})
+    if used_model != str(model):
+        print(f"BACKUP ! {model} returned no message; used LLM_BACKUP_MODEL {used_model}", file=sys.stderr)
     choice = response.choices[0]
     return [json.dumps(choice.message.model_dump(exclude_none=True), ensure_ascii=False), str(choice.finish_reason), str(response), str(response.usage)]
+
+def load_skills(max_skills): #returns skills index text and number of omitted skills
+    """Index Markdown skills by their path and first-line DESCRIPTION only."""
+    max_skills = int(max_skills)
+    paths = [path for path in sorted(Path("skills").rglob("*.md"))
+             if path.is_file() and not any(part.startswith("_") for part in path.relative_to("skills").parts)]
+    entries = []
+    for path in paths[:max_skills]:
+        try:
+            with path.open("r", encoding="utf-8", errors="replace") as file:
+                first_line = file.readline().strip()
+            description = (first_line if re.fullmatch(r'DESCRIPTION="(?:[^"\\]|\\.)*"', first_line)
+                           else "[DESCRIPTION FIRST LINE MISSING]")
+        except OSError as error:
+            description = f"[READ ERROR: {type(error).__name__}: {error}]"
+        entries.append(f"./{path.as_posix()}: {description}")
+    return ["./skills/:\n" + "\n".join(entries), max(0, len(paths) - max_skills)]
