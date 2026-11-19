@@ -12,6 +12,7 @@ import tempfile
 import uuid
 import re
 import log
+import utils
 from pathlib import Path
 
 # --------------------------------------------------------------------
@@ -43,6 +44,7 @@ MAX_CONTEXT_TRANSFORMATIONS = int(os.getenv("MAX_CONTEXT_TRANSFORMATIONS", "30")
 MAX_TOOL_DESCRIPTION_CHARS = int(os.getenv("MAX_TOOL_DESCRIPTION_CHARS", "500"))
 DYNAMIC_TIMEOUT = float(os.getenv("DYNAMIC_TIMEOUT", "5"))
 MODEL = os.getenv("LLM_MODEL", "mlx-community/gemma-4-26b-a4b-it-4bit")
+BACKUP_MODEL = os.getenv("LLM_BACKUP_MODEL", "")
 BASE_URL = os.getenv("BASE_URL", "http://192.168.64.1:2277/v1")
 API_KEY = os.getenv("AI_API_KEY", "dummy")
 TOOL_CHOICE = os.getenv("TOOL_CHOICE", "required")
@@ -334,7 +336,9 @@ while True:
                 request_messages += [{"role": "user", "content": transformation_error}]
             log.llm_start()
             started = time.monotonic()
-            response = client.chat.completions.create(model=MODEL, messages=request_messages, tools=request_tools, tool_choice=TOOL_CHOICE, max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
+            response, used_model = utils.chat_completion(client, MODEL, BACKUP_MODEL, messages=request_messages, tools=request_tools, tool_choice=TOOL_CHOICE, max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
+            if used_model != MODEL:
+                log.warning("BACKUP !", f"{MODEL} refused; used LLM_BACKUP_MODEL {used_model}")
             log.llm_complete(time.monotonic() - started, response)
             message = response.choices[0].message
             if message.content:
