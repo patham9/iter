@@ -6,6 +6,8 @@ import sys
 import openai
 import importlib.util
 import uuid
+import time
+import log
 from pathlib import Path
 
 # --------------------------------------------------------------------
@@ -95,7 +97,9 @@ def create_with_backup(client, model, backup_model=None, **kwargs):
 def chat_completion(messages, tools, model, max_tokens): #messages and tools as JSON text, returns message_json finish_reason response usage
     response, used_model = create_with_backup(CLIENT, str(model), messages=json.loads(str(messages)), tools=json.loads(str(tools)), tool_choice="required", max_tokens=int(max_tokens), extra_body={ "enable_thinking": True})
     if used_model != str(model):
-        print(f"BACKUP ! {model} returned no message; used LLM_BACKUP_MODEL {used_model}", file=sys.stderr)
+        log.warning("BACKUP !", f"{model} returned no usable message; used LLM_BACKUP_MODEL {used_model}")
+    global LAST_RESPONSE
+    LAST_RESPONSE = response
     choice = response.choices[0]
     return [json.dumps(choice.message.model_dump(exclude_none=True), ensure_ascii=False), str(choice.finish_reason), str(response), str(response.usage)]
 
@@ -115,3 +119,64 @@ def load_skills(max_skills): #returns skills index text and number of omitted sk
             description = f"[READ ERROR: {type(error).__name__}: {error}]"
         entries.append(f"./{path.as_posix()}: {description}")
     return ["./skills/:\n" + "\n".join(entries), max(0, len(paths) - max_skills)]
+
+
+# --------------------------------------------------------------------
+# Colored terminal logging (log.py), called from iter.metta
+# --------------------------------------------------------------------
+LAST_RESPONSE = None
+LLM_STARTED = 0.0
+
+def log_header(model, history_count):
+    log.header(str(model), str(uuid.uuid4()), int(history_count))
+    return True
+
+def log_incoming(message):
+    log.incoming(str(message)); return True
+
+def log_status(message):
+    log.status(str(message)); return True
+
+def log_warning(label, message):
+    log.warning(str(label), str(message)); return True
+
+def log_error(label, message):
+    log.error(str(label), str(message)); return True
+
+def log_retry(message):
+    log.retry(str(message)); return True
+
+def log_failure(message):
+    log.failure(str(message)); return True
+
+def log_wait(seconds):
+    log.wait(int(seconds)); return True
+
+def log_llm_start():
+    global LLM_STARTED
+    LLM_STARTED = time.monotonic()
+    log.llm_start(); return True
+
+def log_llm_complete():
+    log.llm_complete(time.monotonic() - LLM_STARTED, LAST_RESPONSE); return True
+
+def log_tool_call(name, arguments, ret, failed):
+    try:
+        args = json.loads(str(arguments))
+    except Exception:
+        args = str(arguments)
+    log.tool_call(str(name), args, str(ret), str(failed) == "true"); return True
+
+def ui_input():
+    """Completed input lines of the fullscreen TUI (which owns stdin), as one event string."""
+    lines = []
+    while log.terminal_ui_active():
+        line = log.poll_input()
+        if not line:
+            break
+        lines.append("[terminal] " + line)
+    return "\n".join(lines)
+
+def ui_skip_channel(stem):
+    """'yes' if the channel must be skipped to avoid a competing stdin reader."""
+    return "yes" if log.terminal_ui_active() and str(stem) == "terminal" else "no"
