@@ -103,24 +103,6 @@ def chat_completion(messages, tools, model, max_tokens): #messages and tools as 
     choice = response.choices[0]
     return [json.dumps(choice.message.model_dump(exclude_none=True), ensure_ascii=False), str(choice.finish_reason), str(response), str(response.usage)]
 
-def load_skills(max_skills): #returns skills index text and number of omitted skills
-    """Index Markdown skills by their path and first-line DESCRIPTION only."""
-    max_skills = int(max_skills)
-    paths = [path for path in sorted(Path("skills").rglob("*"))
-             if path.is_file() and not any(part.startswith("_") for part in path.relative_to("skills").parts)]
-    entries = []
-    for path in paths[:max_skills]:
-        try:
-            with path.open("r", encoding="utf-8", errors="replace") as file:
-                first_line = file.readline().strip()
-            description = (first_line if re.fullmatch(r'DESCRIPTION="(?:[^"\\]|\\.)*"', first_line)
-                           else "[DESCRIPTION FIRST LINE MISSING]")
-        except OSError as error:
-            description = f"[READ ERROR: {type(error).__name__}: {error}]"
-        entries.append(f"./{path.as_posix()}: {description}")
-    return ["./skills/:\n" + "\n".join(entries), max(0, len(paths) - max_skills)]
-
-
 # --------------------------------------------------------------------
 # Colored terminal logging (log.py), called from iter.metta
 # --------------------------------------------------------------------
