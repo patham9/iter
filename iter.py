@@ -18,10 +18,6 @@ from pathlib import Path
 # --------------------------------------------------------------------
 # 0. Configuration:
 # --------------------------------------------------------------------
-
-# --------------------------------------------------------------------
-# 0. Configuration:
-# --------------------------------------------------------------------
 MAX_MEMORY_CHARS = int(os.getenv("MAX_MEMORY_CHARS", "3000"))
 LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "600"))
 KEEP_REASONING_IN_EPISODE = os.getenv("KEEP_REASONING_IN_EPISODE", "True") == "True"
@@ -216,7 +212,7 @@ def load_transformation_descriptions():
 
 def load_skills():
     """Index Markdown skills by their path and first-line DESCRIPTION only."""
-    paths = [path for path in sorted(Path("skills").rglob("*.md"))
+    paths = [path for path in sorted(Path("skills").rglob("*"))
              if path.is_file() and not any(part.startswith("_") for part in path.relative_to("skills").parts)]
     entries = []
     for path in paths[:MAX_SKILLS]:
