@@ -35,7 +35,6 @@ DEFAULT_DELAY = float(os.getenv("DEFAULT_DELAY", "0"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "5000"))
 INIT_WAIT = float(os.getenv("INIT_WAIT", "10"))
 MAX_TOOLS = int(os.getenv("MAX_TOOLS", "30"))
-MAX_SKILLS = int(os.getenv("MAX_SKILLS", "30"))
 MAX_CONTEXT_TRANSFORMATIONS = int(os.getenv("MAX_CONTEXT_TRANSFORMATIONS", "30"))
 MAX_TOOL_DESCRIPTION_CHARS = int(os.getenv("MAX_TOOL_DESCRIPTION_CHARS", "500"))
 DYNAMIC_TIMEOUT = float(os.getenv("DYNAMIC_TIMEOUT", "5"))
@@ -210,23 +209,6 @@ def load_transformation_descriptions():
     return "\n".join(entries), active_paths, max(0, len(paths) - MAX_CONTEXT_TRANSFORMATIONS)
 
 
-def load_skills():
-    """Index Markdown skills by their path and first-line DESCRIPTION only."""
-    paths = [path for path in sorted(Path("skills").rglob("*"))
-             if path.is_file() and not any(part.startswith("_") for part in path.relative_to("skills").parts)]
-    entries = []
-    for path in paths[:MAX_SKILLS]:
-        try:
-            with path.open("r", encoding="utf-8", errors="replace") as file:
-                first_line = file.readline().strip()
-            description = (first_line if re.fullmatch(r'DESCRIPTION="(?:[^"\\]|\\.)*"', first_line)
-                           else "[DESCRIPTION FIRST LINE MISSING]")
-        except OSError as error:
-            description = f"[READ ERROR: {type(error).__name__}: {error}]"
-        entries.append(f"./{path.as_posix()}: {description}")
-    return "./skills/:\n" + "\n".join(entries), max(0, len(paths) - MAX_SKILLS)
-
-
 def apply_transformation(messages, tools, paths):
     errors = []
     for path in paths:
@@ -251,7 +233,6 @@ SESSION_ID = str(uuid.uuid4())
 client = openai.OpenAI(api_key=API_KEY, base_url=BASE_URL, timeout=LLM_TIMEOUT, max_retries=0, default_headers={"X-APC-Tenant": "iter", "x-session-id": SESSION_ID})
 time.sleep(INIT_WAIT)
 Path("memory").mkdir(exist_ok=True)
-Path("skills").mkdir(exist_ok=True)
 Path("transformations").mkdir(exist_ok=True)
 post_task_mode, autonomous_steps, new_burst, pending_event_append = False, 0, True, ""
 cleanup_interval = MAX_EXPERIENCE_SIZE - RETAIN_EXPERIENCE_SIZE
@@ -309,10 +290,6 @@ while True:
             if omitted_transformations > 0:
                 log.warning("XFORM !", f"{omitted_transformations} transformations excluded (MAX_CONTEXT_TRANSFORMATIONS={MAX_CONTEXT_TRANSFORMATIONS})")
                 temporary_message += [{"role": "user", "content": f"[CONTEXT TRANSFORMATION LIMIT REACHED: {omitted_transformations} transformations are omitted and will not execute. Consolidate or remove transformations if they are needed.]"}]
-            SKILLS, omitted_skills = load_skills()
-            if omitted_skills > 0:
-                log.warning("SKILLS !", f"{omitted_skills} skills excluded (MAX_SKILLS={MAX_SKILLS})")
-                temporary_message += [{"role": "user", "content": f"[SKILL LIMIT REACHED: {omitted_skills} Markdown skills are omitted. Consolidate or remove skills if they are needed.]"}]
             memory_paths = [path for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts)]
             memory_contents = [(path, path.read_text(encoding="utf-8", errors="replace").strip()) for path in memory_paths]
             memory_len = sum(len(content) for _, content in memory_contents)
@@ -325,7 +302,7 @@ while True:
                 MEMORY = "./memory/:\n" + "\n".join(str(path) for path in memory_paths)
                 log.warning("MEMORY !", f"Capacity exceeded by {DIFF} characters")
                 temporary_message += [{"role": "user", "content": f"[MEMORY FOLDER TOTAL CHARACTER CAPACITY BY FILES NOT BEGINNING WITH _ EXCEEDED BY {DIFF} CHARS. FIX THIS FIRST.]"}]
-            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY + "\n\n" + SKILLS}] + experience + temporary_message
+            request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS, active_transformations)
             if transformation_error:
                 log.error("XFORM !", transformation_error)
