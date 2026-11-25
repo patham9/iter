@@ -18,6 +18,8 @@
 (= (MAX_TOOL_DESCRIPTION_CHARS) 500)
 (= (DYNAMIC_TIMEOUT) 5)
 (= (MODEL) (getenv-default "LLM_MODEL" "mlx-community/gemma-4-26b-a4b-it-4bit"))
+(= (BACKUP_MODEL) (getenv-default "LLM_BACKUP_MODEL" "")) ;retried once if MODEL returns no usable message
+(= (TOOL_CHOICE) (getenv-default "TOOL_CHOICE" "auto"))
 (= (BASE_URL) (getenv-default "BASE_URL" "http://192.168.64.1:2277/v1"))
 (= (API_KEY) (getenv-default "AI_API_KEY" "dummy"))
 (= (MAX_MEMORY_CHARS) 3000) ;When memory turns into an index
@@ -214,7 +216,7 @@
                  (change-state! &request_tools $request_tools)
                  (if (not (empty-string $transformation_error)) (progn (log_error "XFORM !" $transformation_error) (push! &request_messages (user $transformation_error))) _)))
      (log_llm_start)
-     (let ($message $finish_reason $response $usage) (llm (get-state &request_messages) (get-state &request_tools) (MODEL) (MAX_TOKENS))
+     (let ($message $finish_reason $response $usage) (llm (get-state &request_messages) (get-state &request_tools) (MODEL) (BACKUP_MODEL) (TOOL_CHOICE) (MAX_TOKENS))
           (progn (change-state! &message $message)
                  (change-state! &finish_reason $finish_reason)
                  (change-state! &response $response)

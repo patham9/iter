@@ -59,8 +59,7 @@ def exception_text(error):
 
 # LLM call with refusal fallback: always tries the primary model first. If no usable
 # message is returned (refusal, empty message, content filter, or API error), the same
-# request is retried once with LLM_BACKUP_MODEL (if set).
-BACKUP_MODEL = os.getenv("LLM_BACKUP_MODEL", "")
+# request is retried once with backup_model (BACKUP_MODEL from iter.metta, if set).
 
 def is_refusal(response):
     """True if the response did not return a usable LLM message."""
@@ -77,9 +76,8 @@ def is_refusal(response):
         return True
     return not (getattr(message, "content", None) or getattr(message, "tool_calls", None))
 
-def create_with_backup(client, model, backup_model=None, **kwargs):
+def create_with_backup(client, model, backup_model, **kwargs):
     """Returns (response, used_model). Primary first, backup if no message returned."""
-    backup_model = BACKUP_MODEL if backup_model is None else backup_model
     use_backup = bool(backup_model) and backup_model != model
     try:
         response = client.chat.completions.create(model=model, **kwargs)
@@ -94,8 +92,8 @@ def create_with_backup(client, model, backup_model=None, **kwargs):
             raise error
     return client.chat.completions.create(model=backup_model, **kwargs), backup_model
 
-def chat_completion(messages, tools, model, max_tokens): #messages and tools as JSON text, returns message_json finish_reason response usage
-    response, used_model = create_with_backup(CLIENT, str(model), messages=json.loads(str(messages)), tools=json.loads(str(tools)), tool_choice="required", max_tokens=int(max_tokens), extra_body={ "enable_thinking": True})
+def chat_completion(messages, tools, model, backup_model, tool_choice, max_tokens): #messages and tools as JSON text, returns message_json finish_reason response usage
+    response, used_model = create_with_backup(CLIENT, str(model), str(backup_model), messages=json.loads(str(messages)), tools=json.loads(str(tools)), tool_choice=str(tool_choice), max_tokens=int(max_tokens), extra_body={ "enable_thinking": True})
     if used_model != str(model):
         log.warning("BACKUP !", f"{model} returned no usable message; used LLM_BACKUP_MODEL {used_model}")
     global LAST_RESPONSE

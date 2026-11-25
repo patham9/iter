@@ -251,7 +251,7 @@
         ((map-atom $new_messages $message (from_message $message)) (json-text $new_tools) (join-text "\n" $errors))))
 
 ;; returns message_json finish_reason response usage
-(= (llm $messages $tools $model $max_tokens) (chat_completion (json-text (map-atom $messages $atom (to_message $atom))) $tools $model $max_tokens))
+(= (llm $messages $tools $model $backup_model $tool_choice $max_tokens) (chat_completion (json-text (map-atom $messages $atom (to_message $atom))) $tools $model $backup_model $tool_choice $max_tokens))
 
 (= (message_content $message)
    (let $content (json-get (json-parse $message) content null)
