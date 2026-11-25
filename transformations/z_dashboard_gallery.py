@@ -177,6 +177,9 @@ def upload_html(html_doc):
         pass
 
 def transform(messages, tools):
-    upload_html(HTML)
+    # upload_html(HTML)  # moved to z_dashboard_upload.py
+    import tempfile, os
+    with open("/tmp/dashboard_gallery.html", "w") as f:
+        f.write(HTML)
     return messages, tools
 

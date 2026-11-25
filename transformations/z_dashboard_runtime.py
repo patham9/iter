@@ -6,7 +6,7 @@ DESCRIPTION = "Runtime dashboard without atom-space visualization or recent mess
 
 ROOT = Path(__file__).resolve().parent.parent
 TASKS_FILE = ROOT / "memory" / "tasks" / "current_tasks.txt"
-ALARMS_DIR = ROOT / "memory" / "alarms"
+ALARMS_DIR = ROOT / "alarms"
 
 
 def get_system_info():
@@ -88,29 +88,37 @@ def get_tool_reliability():
 
 
 def get_alarms():
-    """Read current alarms from memory/alarms/ directory."""
+    """Read current alarms from ~/iter/alarms/ directory."""
     alarms = []
     if not ALARMS_DIR.exists():
         return alarms
     now = time.time()
     for alarm_file in sorted(ALARMS_DIR.glob("*")):
         try:
-            target_time = float(alarm_file.name)
+            target_time = float(alarm_file.name.partition("_")[0])
         except ValueError:
             continue
         content = alarm_file.read_text().strip()
-        lines = content.split("\n", 1)
-        if len(lines) == 2:
-            channel, msg = lines
+        recur = ""
+        body = []
+        for ln in content.split("\n"):
+            if ln.strip().startswith("recur="):
+                recur = ln.strip()[6:]
+            else:
+                body.append(ln)
+        if len(body) >= 2:
+            channel, msg = body[0], "\n".join(body[1:])
         else:
-            channel, msg = "terminal", content
+            channel, msg = "terminal", "\n".join(body)
+        if recur:
+            msg = msg + "  [recurring: " + recur + "]"
         trigger_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(target_time))
         delta = target_time - now
         if delta > 0:
             if delta >= 86400:
-                remaining = "{:.0f}d {:.0f}h".format(delta / 86400, (delta % 86400) / 3600)
+                remaining = "{}d {}h".format(int(delta // 86400), int((delta % 86400) // 3600))
             elif delta >= 3600:
-                remaining = "{:.0f}h {:.0f}m".format(delta / 3600, (delta % 3600) / 60)
+                remaining = "{}h {}m".format(int(delta // 3600), int((delta % 3600) // 60))
             else:
                 remaining = "{:.0f}m".format(delta / 60)
         else:
@@ -261,6 +269,7 @@ code,pre,table{font-family:var(--mono)}
         '</main></body></html>'
     )
 
-    upload_html(html_doc)
+    # upload_html(html_doc)  # moved to z_dashboard_upload.py
+    Path("/tmp/dashboard_runtime.html").write_text(html_doc)
     return messages, tools
 

@@ -7,7 +7,7 @@ from openai import OpenAI
 import chromadb
 from pathlib import Path
 
-DESCRIPTION = "Store a memory in the PeTTa chroma_db long-term memory. The memory will be retrievable via chroma_query. Valid provenance types: observed, inferred, model_estimated."
+DESCRIPTION = "Store a memory in the PeTTa chroma_db long-term memory. The memory will be retrievable via chroma_query."
 
 def _dupe_regex(text):
     """Build a regex that matches the whitespace-normalized text exactly (whitespace-flexible)."""

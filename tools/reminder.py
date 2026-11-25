@@ -9,10 +9,10 @@ def run(when, channel="terminal", message=""):
     when: str - datetime in format 'YYYY-MM-DD HH:MM:SS'
     channel: str - channel to send reminder to (default 'terminal')
     message: str - reminder message text
-    Creates an alarm file in memory/alarms/ named by Unix timestamp.
+    Creates an alarm file in ~/iter/alarms/ named by Unix timestamp.
     """
     ROOT = Path(__file__).resolve().parent.parent
-    ALARMS_DIR = ROOT / "memory" / "alarms"
+    ALARMS_DIR = ROOT / "alarms"
     ALARMS_DIR.mkdir(parents=True, exist_ok=True)
 
     dt = datetime.strptime(when, "%Y-%m-%d %H:%M:%S")
