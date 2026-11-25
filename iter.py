@@ -42,7 +42,7 @@ MODEL = os.getenv("LLM_MODEL", "mlx-community/gemma-4-26b-a4b-it-4bit")
 BACKUP_MODEL = os.getenv("LLM_BACKUP_MODEL", "")
 BASE_URL = os.getenv("BASE_URL", "http://192.168.64.1:2277/v1")
 API_KEY = os.getenv("AI_API_KEY", "dummy")
-TOOL_CHOICE = os.getenv("TOOL_CHOICE", "required")
+TOOL_CHOICE = os.getenv("TOOL_CHOICE", "auto")
 
 
 # --------------------------------------------------------------------
