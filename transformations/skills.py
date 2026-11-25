@@ -29,7 +29,8 @@ def load_skills():
         except OSError as error:
             description = f"[READ ERROR: {type(error).__name__}: {error}]"
         entries.append(f"./{path.as_posix()}: {description}")
-    return "./skills/:\n" + "\n".join(entries), max(0, len(paths) - MAX_SKILLS)
+    header = "You can store knowledge that is not needed every cycle as files in ./skills/ (subfolders allowed)."
+    return header + "\n./skills/:\n" + "\n".join(entries), max(0, len(paths) - MAX_SKILLS)
 
 
 def transform(messages, tools):
