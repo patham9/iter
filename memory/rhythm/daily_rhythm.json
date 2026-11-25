@@ -1,0 +1,1 @@
+{"tz":"UTC","p":[{"n":"night","s":0,"e":6,"m":"maintain","d":["NAL","link"]},{"n":"am","s":6,"e":12,"m":"respond","d":["users"]},{"n":"pm","s":12,"e":18,"m":"respond","d":["fix"]},{"n":"late","s":18,"e":24,"m":"explore","d":["graph"]}]}

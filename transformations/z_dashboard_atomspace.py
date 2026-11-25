@@ -4,8 +4,11 @@ import json
 
 DESCRIPTION = "Atom-space dashboard with raw space.metta and visualization"
 
+MAX_ATOMS = 200  # Sliding window: show at most 200 atoms to prevent timeout
+
 ROOT = Path(__file__).resolve().parent.parent
-SPACE_FILE = ROOT / "transformations" / ".runtime" / "space.metta"
+SPACE_FILE = ROOT / "metta" / "space.metta"
+INFERRED_FILE = ROOT / "metta" / "inferred.metta"
 
 
 def upload_html(html_doc):
@@ -23,7 +26,7 @@ def upload_html(html_doc):
         pass
 
 
-def parse_space_metta():
+def parse_space_metta(space_text=None, inferred_text=None):
     """Build a hierarchical shared-subterm graph.
 
     Top-level MeTTa statements are statement nodes. Any meaningful term that
@@ -33,18 +36,38 @@ def parse_space_metta():
     statements share (& a b), they connect through (& a b), not redundantly
     through a and b as well.
     """
-    try:
-        space_text = SPACE_FILE.read_text()
-    except Exception:
+    # Collect (text, source_label) pairs
+    sources = []
+    if space_text is not None:
+        sources.append((space_text, 'space'))
+    else:
+        try:
+            space_lines = [l for l in SPACE_FILE.read_text().split('\n') if l.strip() and not l.strip().startswith(';;')]
+            sources.append(('\n'.join(space_lines[-MAX_ATOMS:]), 'space'))
+        except Exception:
+            pass
+    if inferred_text is not None:
+        sources.append((inferred_text, 'inferred'))
+    else:
+        try:
+            # Sliding window: cap to last MAX_ATOMS lines
+            lines = INFERRED_FILE.read_text().split('\n')
+            non_empty = [l for l in lines if l.strip() and not l.strip().startswith(';;')]
+            sources.append(('\n'.join(non_empty[-MAX_ATOMS:]), 'inferred'))
+        except Exception:
+            pass
+    if not sources:
         return '{"nodes":[],"links":[]}'
 
-    clean_lines = []
-    for line in space_text.split('\n'):
-        line = line.strip()
-        if not line or line.startswith(';;'):
-            continue
-        clean_lines.append(line)
-    text = ' '.join(clean_lines)
+    def clean_text(raw):
+        clean_lines = []
+        for line in raw.split('\n'):
+            line = line.strip()
+            if not line or line.startswith(';;'):
+                continue
+            clean_lines.append(line)
+        return ' '.join(clean_lines)
+
 
     def find_top_level_exprs(src):
         exprs = []
@@ -86,6 +109,16 @@ def parse_space_metta():
             elif depth > 0:
                 current += ch
         return exprs
+
+
+    # Build combined list of (expr_string, source_label)
+    all_exprs = []
+    for raw_text, src_label in sources:
+        cleaned = clean_text(raw_text)
+        for expr in find_top_level_exprs(cleaned):
+            all_exprs.append((expr, src_label))
+
+    text = ' '.join(expr for expr, _ in all_exprs)
 
     def tokenize(expr):
         tokens = []
@@ -209,13 +242,12 @@ def parse_space_metta():
                 out.add(rendered)
                 term_trees.setdefault(rendered, term)
 
-    exprs = find_top_level_exprs(text)
     statement_nodes = []
     statement_trees = []
     term_sets = []
     term_occurs = {}
 
-    for expr in exprs:
+    for expr, src_label in all_exprs:
         tree = parse_expr(expr)
         if tree is None:
             continue
@@ -228,6 +260,7 @@ def parse_space_metta():
             'name': expr,
             'statement': expr,
             'kind': 'statement',
+            'source': src_label,
             'subterms': sorted(terms)
         })
         statement_trees.append(tree)
@@ -328,10 +361,26 @@ def parse_space_metta():
 def transform(messages, tools):
     now = time.strftime("%Y-%m-%d %H:%M:%S")
 
+    # Sliding window: cap to last MAX_ATOMS lines to prevent timeout
     space_content = ""
     if SPACE_FILE.exists():
-        space_content = SPACE_FILE.read_text()
+        all_space = SPACE_FILE.read_text()
+        space_lines = [l for l in all_space.split('\n') if l.strip() and not l.strip().startswith(';;')]
+        if len(space_lines) > MAX_ATOMS:
+            space_content = '\n'.join(space_lines[-MAX_ATOMS:])
+        else:
+            space_content = all_space
     space_escaped = H.escape(space_content)
+
+    inferred_content = ""
+    if INFERRED_FILE.exists():
+        all_inferred = INFERRED_FILE.read_text()
+        inferred_lines = [l for l in all_inferred.split('\n') if l.strip() and not l.strip().startswith(';;')]
+        if len(inferred_lines) > MAX_ATOMS:
+            inferred_content = '\n'.join(inferred_lines[-MAX_ATOMS:])
+        else:
+            inferred_content = all_inferred
+    inferred_escaped = H.escape(inferred_content)
 
     css = r'''
 :root{
@@ -393,12 +442,17 @@ code,pre{font-family:var(--mono)}
         '<div class="card-body space"><pre class="source-pre">' + space_escaped + '</pre></div></section>'
     )
 
+    inferred_section = (
+        '<section class="card"><div class="card-head"><h2 class="card-title">inferred.metta</h2><span class="card-note">reasoning output · transitive closure + modus ponens</span></div>'
+        '<div class="card-body space"><pre class="source-pre">' + inferred_escaped + '</pre></div></section>'
+    )
+
     # Space Visualization section
-    space_graph_data = parse_space_metta()
+    space_graph_data = parse_space_metta(space_content, inferred_content)
     space_viz_section = (
         '<section class="card">'
         '<div class="card-head"><h2 class="card-title">Space Visualization</h2>'
-        '<span class="card-note">statement nodes · shared compounds form hierarchy over shared atoms</span></div>'
+        '<span class="card-note">space.metta + inferred.metta · statements colour-coded by source</span></div>'
         '<div class="graph-shell"><div id="space_viz" class="graph-frame">'
         '<div class="graph-loading">Loading graph...</div>'
         '<div class="graph-hud graph-hud-top">'
@@ -421,8 +475,8 @@ code,pre{font-family:var(--mono)}
         'document.getElementById("graph_structure_count").textContent=gData.structuralCount||gData.nodes.filter(function(n){return n.kind!=="statement";}).length;'
         'document.getElementById("graph_edge_count").textContent=gData.links.length;'
         'var legend=document.getElementById("graph_legend");'
-        '[["#6ea8fe","statement"],["#e7a86e","compound shared term"],["#7ccf91","atomic shared term"]].forEach(function(x){var item=document.createElement("span");item.className="graph-legend-item";var sw=document.createElement("i");sw.className="graph-swatch";sw.style.background=x[0];item.appendChild(sw);item.appendChild(document.createTextNode(x[1]));legend.appendChild(item);});'
-        'function nodeColor(n){if(n.kind==="statement")return "#6ea8fe";if(n.kind==="compound")return "#e7a86e";return "#7ccf91";}'
+        '[["#6ea8fe","space.metta statement"],["#b8a1e3","inferred.metta statement"],["#e7a86e","compound shared term"],["#7ccf91","atomic shared term"]].forEach(function(x){var item=document.createElement("span");item.className="graph-legend-item";var sw=document.createElement("i");sw.className="graph-swatch";sw.style.background=x[0];item.appendChild(sw);item.appendChild(document.createTextNode(x[1]));legend.appendChild(item);});'
+        'function nodeColor(n){if(n.kind==="statement")return n.source==="inferred"?"#b8a1e3":"#6ea8fe";if(n.kind==="compound")return "#e7a86e";return "#7ccf91";}'
         'function nodeRadius(n){if(n.kind==="statement")return 4.8+Math.min(5.2,Math.log2((n._degree||0)+1)*1.25);if(n.kind==="compound")return 5.2+Math.min(3.5,Math.log2((n._degree||0)+1));return 3.8+Math.min(2.8,Math.log2((n._degree||0)+1)*.8);}'
         'function drawRound(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}'
         'var graph=ForceGraph()(graphEl);'
@@ -431,7 +485,7 @@ code,pre{font-family:var(--mono)}
         'graph.nodeRelSize(6);'
         'graph.warmupTicks(300);'
         'graph.cooldownTicks(0);'
-        'graph.nodeLabel(function(n){if(n.kind==="statement")return n.statement||n.name||n.id;return (n.kind==="compound"?"shared compound: ":"shared atom: ")+(n.term||n.name||n.id)+" · links "+(n._degree||0)+" statements";});'
+        'graph.nodeLabel(function(n){if(n.kind==="statement"){var src=n.source==="inferred"?"[inferred] ":"[space] ";return src+(n.statement||n.name||n.id);}return (n.kind==="compound"?"shared compound: ":"shared atom: ")+(n.term||n.name||n.id)+" · links "+(n._degree||0)+" statements";});'
         'graph.nodeCanvasObject(function(node,ctx,globalScale){'
         'var label=String(node.name||node.id);var r=nodeRadius(node);var base=nodeColor(node);ctx.save();'
         'ctx.fillStyle=base;ctx.strokeStyle="rgba(225,232,240,.62)";ctx.lineWidth=.75/globalScale;'
@@ -443,7 +497,7 @@ code,pre{font-family:var(--mono)}
         'ctx.fillStyle="rgba(10,13,17,.88)";ctx.fill();ctx.strokeStyle=node.kind==="statement"?"rgba(80,105,140,.72)":"rgba(105,91,68,.76)";ctx.lineWidth=.6/globalScale;ctx.stroke();'
         'ctx.fillStyle=node.kind==="statement"?"#c9d1dc":base;ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(shown,x+padX,node.y);ctx.restore();'
         '});'
-        'graph.linkColor(function(l){if(l.type==="contains")return "rgba(140,148,160,.32)";var t=l.target;if(t&&typeof t==="object"){return t.kind==="compound"?"rgba(231,168,110,.52)":"rgba(124,207,145,.46)";}return "rgba(120,131,145,.45)";});'
+        'graph.linkColor(function(l){if(l.type==="contains")return "rgba(140,148,160,.32)";var t=l.target;if(t&&typeof t==="object"){if(t.kind==="statement"){return t.source==="inferred"?"rgba(184,161,227,.50)":"rgba(110,168,254,.50)";}return t.kind==="compound"?"rgba(231,168,110,.52)":"rgba(124,207,145,.46)";}return "rgba(120,131,145,.45)";});'
         'graph.linkWidth(function(){return 1.15;});'
         'graph.linkDirectionalParticles(0);'
         'graph.linkDirectionalArrowLength(0);'
@@ -499,10 +553,11 @@ code,pre{font-family:var(--mono)}
         '<header class="page-head"><div><h1 class="page-title">Eray Index <span style="color:#66707d;font-weight:400">/ Atom Space</span></h1>'
         '<div class="page-subtitle">Raw symbolic space and hierarchical shared-subterm visualization.</div></div>'
         '<div class="clock"><span class="clock-label">Local snapshot</span>' + H.escape(now) + '</div></header>'
-        + '<div class="grid">' + space_section + space_viz_section + '</div>'
+        + '<div class="grid">' + space_section + inferred_section + space_viz_section + '</div>'
         + '<div class="f">Generated by Iter · transformations/dashboard_atomspace.py · refresh 15s</div>'
         '</main></body></html>'
     )
 
-    upload_html(html_doc)
+    # upload_html(html_doc)  # moved to z_dashboard_upload.py
+    Path("/tmp/dashboard_atomspace.html").write_text(html_doc)
     return messages, tools

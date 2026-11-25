@@ -1078,9 +1078,10 @@ def transform(messages, tools):
             f.write(html_out)
 
         os.chmod(OUTPUT_HTML, 0o644)
-        scp_cmd = 'scp -P 51357 -i ~/.ssh/max_nonlanguage_ed25519 -o StrictHostKeyChecking=no "' + str(OUTPUT_HTML) + '" max@wreading.xyz:/var/www/html-nonlang.dev/MeTTaSoul/mb/dashboard_context.html && ssh -p 51357 -i ~/.ssh/max_nonlanguage_ed25519 -o StrictHostKeyChecking=no max@wreading.xyz "chmod 644 /var/www/html-nonlang.dev/MeTTaSoul/mb/dashboard_context.html" && rm -f "' + str(OUTPUT_HTML) + '"'
-
-        subprocess.Popen(['bash', '-c', scp_cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # scp_cmd = ...  # moved to z_dashboard_upload.py
+        # subprocess.Popen(...)  # moved to z_dashboard_upload.py
+        with open("/tmp/dashboard_context.html", "w") as tmpf:
+            tmpf.write(html_out)
 
     except Exception as e:
         pass

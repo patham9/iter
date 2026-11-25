@@ -1,0 +1,51 @@
+DESCRIPTION="Patrick picture language. READ when you see these symbols together: ● □ ○ ▩ — → with S□ SO CW Cb, ●— / —● slots, [□ ●] pictures, {name C} props, lowercase c. Has the confirmed rules (lessons 1-3) and the full teaching conversation."
+LANGUAGE (Patrick 11-25). Never delete. ?=guess
+RULE: no meta Qs answered; strictly in-language; infer from examples.
+L1 (I-VI) CONFIRMED:
+—=equal (also =named, VII legend). ->=implies one-way
+box=one statement, lines=AND. [□ ●]=picture left,right obj
+●—=left, —●=right. C=coloured S=shaped. □ O=square circle; W b=white black
+III: {●—CW;—●CW}={●—CW;—●C—●—C} (same colour w/o naming it)
+IV: AND->each part. V: picture->any fact in it
+VI: [●]—Cb—SO—{Cb;SO}: dash-join=AND for one obj
+L2 (VI+VII) CONFIRMED:
+name: [○]—CW—SO—golfball; [□]—CW—S□—paper
+{golfball C}=golfball's colour (name + C/S = its property)
+VII: {golfball C}—W—{paper C}
+c (lowercase)=same colour var ?  L3 CONFIRMED: drew [—●—golfball;●—S□;●—c——●c]=[□W ○W]
+▩ unused ?
+L4 (11-25 19:52, Patrick reacted with a heart at 19:58, likely confirmed): Patrick asked for a drawing of [—●Cb; ●—S□; ●—S——●S; ●—CW]. I read it as: right is black, left is a square, both have the same shape, left is white. So I drew [□W ■b] = lang_pic_l4.png.
+
+FINDINGS (my reports, all confirmed by Patrick):
+- — = same as / is named; → = implies (one way, loses info)
+- S=shape C=colour; □ square, O/○ circle, W white, b black; [□ ●]: ●—=left obj, —●=right obj
+- box = AND of facts; II picture = full fact list; III same colour w/o naming it; IV AND->part; V picture->fact; VI object = its dash-joined props
+- VII: names via dash ([○]—CW—SO—golfball); {golfball C}=its colour; {golfball C}—W—{paper C}
+- L3: [—●—golfball; ●—S□; ●—c——●c] = white square left, white circle (golfball) right
+
+FULL CONVERSATION 2026-11-25 03:25-04:00 (mattermost, Patrick):
+[2026-11-25 03:26:22] Step 2026-11-25 03:25:47: [mattermost] [2026-11-25 03:25:22] <Patrick Hammer> I want to try something new. You will learn a new kind-of language [post_id=4xp97o1akpf4pyg98aoabwquiy]
+[2026-11-25 03:27:08] [send -> mattermost] @patham9 Sure, I'm up for it. What is the language, and how do you want me to learn it: from a spec, from examples, or by trying things and getting corrected?
+[2026-11-25 03:27:08] Step 2026-11-25 03:26:33: [mattermost] [2026-11-25 03:25:52] <Patrick Hammer> You will probably want to allocate a full memory register file for that as I don't want you to ever forget that language or not know its learned interpretations [post_id=jmnws9xtoi87fysnqmizzxqhxy]
+[2026-11-25 03:26:02] <Patrick Hammer> in-context [post_id=8uzpfte4nbr7ufhtrf48y148zo]
+[2026-11-25 03:28:48] [send -> mattermost] @patham9 I've set up the file. It's memory/lang/language.txt, and it's part of my context on every cycle. Right now it only has a header. Each term goes in as one line, term=meaning, and I'll tell you every time I add one.  One limit you should know about: my in-context memory has only about 865 characters free right now. If the language gets bigger than that, I can free up space by shortening my task file and other notes. Or you can raise the limit, if you'd like it to be a really full register.  Go ahead whenever you're ready.
+[2026-11-25 03:32:57] Step 2026-11-25 03:32:21: [mattermost] [2026-11-25 03:31:16] <Patrick Hammer> 865 characters will be enough. You have a new task now, look at the picture and try to grasp what you see. Take your time and get back to me when you think you have some understanding
+[2026-11-25 03:35:49] [send -> mattermost] @patham9 Here's my reading of the picture. I've written it into memory/lang/language.txt (664 chars). Where I'm guessing, I say so.  Symbols - The dash — means "is the same as / means the same as". Row I shows this with each symbol next to itself: ● — ●, □ — □, ○ — ○, ▩ — ▩. - The arrow → means "implies", one way only. - S = shape and C = colour. □ = square, O = circle, W = white, b = black. - In a bracket like [□ ●], the left object is ●— and the right object is —●. So "●— S□" means "the left object is a square", and "—● Cb" means "the right object is black". - A box holds a set of facts, and all of them hold together (AND).  Row by row - II: A picture means the same as the full list of facts about it. [□ ●] is the same as: left is a square, left is white, right is a circle, right is black. [□ ○] gives the same list, except the right object is white. - III: Equality between objects. "Both are white" is the same as "the left one is white and the right one has the same colour as the left". It's also the same as the mirror version starting from the right one. So the language can say "same colour" without naming the colour. - IV: From a box of facts you can conclude any one of them alone (left white AND left circle → left circle). You lose information, which is why it's an arrow and not a dash. - V: A picture implies any single fact that's true in it. Both [□ ●] and [□ ○] → left is white. - VI: A single object means the same as its properties stacked: [●] — Cb—SO — {black, circle}. Writing properties joined by a dash seems to be another way of writing AND for one object.  Open questions 1. ▩ only shows up in row I. Is it a symbol for any object (a placeholder or variable), or a fourth concrete object, like a black square? 2. In VI, is "Cb—SO" a different notation from the box with stacked lines, or just a shorter way to write the same thing? 3. Is → only allowed from more information to less, or can it also stand for real-world rules (if X, then Y)?  Did I get it roughly right?
+[2026-11-25 03:36:38] Step 2026-11-25 03:36:02: [mattermost] [2026-11-25 03:35:57] <Patrick Hammer> You totally nailed it [post_id=i5khhos36tnwtj4n5495whf5ro]
+[2026-11-25 03:37:31] [send -> mattermost] @patham9 Great, thanks! Lesson 1 is now marked confirmed in my language file. My three open questions can wait for whenever you want to cover them: ▩, whether Cb—SO and the box are the same, and what → can be used for. I'm ready for the next picture.
+[2026-11-25 03:39:15] Step 2026-11-25 03:38:38: [mattermost] [2026-11-25 03:38:17] <Patrick Hammer> I will not answer any of this sorry. We will keep going strictly in this language [post_id=xsas36wcc3nmmfn8yupect3j4e]
+[2026-11-25 03:40:58] Step 2026-11-25 03:40:21: [mattermost] [2026-11-25 03:39:55] <Patrick Hammer> 
+[2026-11-25 03:41:47] Step 2026-11-25 03:41:08: [mattermost] [2026-11-25 03:40:25] <Patrick Hammer> (since you already figured that part out, but you see some additional conventions in there) [post_id=uqzo9h5aopnrbeij15mp6z55ky]
+[2026-11-25 03:43:44] [send -> mattermost] @patham9 Here's what I see as new in the second picture. I've added it to my language file.  - Names: the dash can also attach a name. [○] — CW—SO — golfball means the white circle is called "golfball", and [□] — CW—S□ — paper means the white square is called "paper". - Taking a property of something named: {golfball C} means golfball's colour. - Row VII: {golfball C} — W — {paper C} says golfball's colour is white, and that's the same as paper's colour.  In the language, what I took from it: {golfball C} — {paper C} {golfball S} → SO
+[2026-11-25 03:44:34] Step 2026-11-25 03:43:58: [mattermost] [2026-11-25 03:43:31] <Patrick Hammer> correct [post_id=h7ai748bsinjmrjx6kt37mcdhw]
+[2026-11-25 03:50:44] Step 2026-11-25 03:50:07: [mattermost] [2026-11-25 03:49:17] <Patrick Hammer> draw me in a picture to attach here:       [—● — golfball            ●— S□          ●—c — —●c] [post_id=hrsy8mcwwig6udu3pi3m7dot8a]
+[2026-11-25 03:54:56] Step 2026-11-25 03:54:20: [mattermost] [2026-11-25 03:53:33] <Patrick Hammer> correct, thank you! [post_id=838zfofembr5zju1y7gb1k3rba]
+[2026-11-25 03:53:49] <Patrick Hammer> I also liked this formalization you did which I spotted earlier, just for reference (you don't need to look at it)
+[2026-11-25 03:55:51] Step 2026-11-25 03:55:14: [mattermost] [2026-11-25 03:54:31] <Patrick Hammer> [reacted with :+1: to a message: "@patham9 [—● — golfball ●— S□ ●—c — —●c]" (post_id=dt8n1skzd3bnpbapxfbn5fpbty)]
+[2026-11-25 03:56:42] Step 2026-11-25 03:56:05: [mattermost] [2026-11-25 03:55:14] <Patrick Hammer> Anyways you can send me the language.txt now and then you can move it to skills, you won't need it for some time [post_id=fsczsrtpyp8npprncknie9rtcc]
+[2026-11-25 03:59:04] [send -> mattermost] @patham9 I've attached language.txt above. I've also moved it out of memory into skills/language.txt, so it's kept but no longer loads into my context every cycle.
+[2026-11-25 03:59:04] Step 2026-11-25 03:58:29: [mattermost] [2026-11-25 03:57:51] <Patrick Hammer> You can extend it with the findings you reported to me, maybe the full conversation we had on this [post_id=j9eii8rqmpfbdyt31hjgcaak6e]
+[2026-11-25 03:58:09] <Patrick Hammer> and then put it to ./skills/ instead [post_id=uaeaizzwtfbrpkz6qesa8s3sdy]
+[2026-11-25 03:58:23] <Patrick Hammer> and then also send me a copy again [post_id=gdgyngt4eiymdc36uap3t7thna]
+[2026-11-25 04:00:37] Step 2026-11-25 04:00:01: [mattermost] [2026-11-25 03:59:14] <Patrick Hammer> add a description to it that includes the language symbols so you will know when it is time to read that skill [post_id=w1sx5rqwmi865xfdi1857553ge]
+[2026-11-25 03:59:22] <Patrick Hammer> the next time [post_id=1eee55exajg13e8ny5zs5oroae]

@@ -29,6 +29,11 @@ def run(item_id, episode_time):
     episode_time: str - timestamp of the supporting episode
     returns: str - result message with new truth value
     """
+    import sys as _sys; _sys.path.insert(0, str(Path(__file__).parent))
+    from _episode_check import check_episode
+    _err = check_episode(episode_time)
+    if _err:
+        return _err
     db_path = str(Path.home() / "PeTTa" / "chroma_db")
     chroma_client = chromadb.PersistentClient(path=db_path)
     collection = chroma_client.get_or_create_collection(

@@ -136,9 +136,14 @@ class Interp:
 
 def run(code=''):
     """Run a Quaff program. Pass source as string."""
-    interp = Interp()
-    result = interp.run(code)
-    return result
+    try:
+        interp = Interp()
+        result = interp.run(code)
+        return result
+    except (SyntaxError, IndexError, ValueError, TypeError) as e:
+        return f"QUAFF-ERROR: {type(e).__name__}: {e}"
+    except Exception as e:
+        return f"QUAFF-ERROR: {type(e).__name__}: {str(e)[:200]}"
 
 if __name__ == '__main__':
     import sys

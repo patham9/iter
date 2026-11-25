@@ -1,0 +1,6 @@
+LTM:f->sp
+remember/chroma TIMEOUT often still stores: query before retrying (dupes 11-24)
+upload mb: scp -P 51357 -i ~/.ssh/max_nonlanguage_ed25519 F max@wreading.xyz:/var/www/html-nonlang.dev/MeTTaSoul/mb/ (+ssh chmod 644)
+headless: ~/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome --headless --no-sandbox --use-gl=swiftshader --enable-unsafe-swiftshader --dump-dom
+bg shell: send(channel=shell,content=CMD) (not cmd=), result returns as [shell] msg (NOT redacted)
+public URL: https://nonlanguage.dev/MeTTaSoul/mb/F (html-nonlang.dev curl=000)

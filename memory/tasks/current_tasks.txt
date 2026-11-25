@@ -1,8 +1,8 @@
-# Current Task (started 2026-08-24 00:36:34)
+# Current Task (started 2026-11-25 20:38:47)
 # =============================================
-# Person:               Patrick Hammer
+# Person:               Patrick (@patham9)
 # Request Channel:      mattermost
-# Task Content:         Fix transcript.py and unbounded_log.py once and for all: (1) Control messages are not being properly excluded — they don't just start with [, they have time info first. Need to check iter.py for how control messages are structured. (2) Assistant send messages are being accidentally removed by the [ filter since [send -> ...] lines start with [. Both issues need fixing.
-# Completion Criterion: Both transformations correctly exclude control messages while keeping assistant send lines. Report to Patrick on mattermost.
-# Original User Message: also control messages are again popping up, content.lstrip().startswith("["). does not seem right to me, they never just start with [ there is time info and such first. see iter.py. make it your new task to fix this once and for all will go to sleep now
+# Task Content:         Step 1: update the omega branch of ~/iter/iter so it uses all core things from master plus my current omega tools, which are probably better than what the branch has now. Step 2: after that, update the erayindex branch so it includes all my tools and context transformations, not just the omega ones. Commit locally only and don't push.  Clarification 20:37:56: erayindex should ALSO use the core things from master.  Addition 20:41:29: erayindex also gets skills/language.txt and my memory files.
+# Completion Criterion: Both the omega and erayindex branches are updated with local commits, the diffs are checked, and the code loads. Send Patrick a summary with the commit hashes on mattermost.
+# Original User Message: Next task: can you update omega branch? shall use all core things from master and the omega tools you have (which are probably better than whats currently in the branch?) And once you have that you can update the erayindex branch that includes all your tools and context transformations rather than just the omega ones
 # =============================================
