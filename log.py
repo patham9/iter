@@ -131,6 +131,18 @@ def _clip(value, maximum):
     return value
 
 
+
+def _clip_split(text):
+    """Split text at the clip marker. Return (main, marker) or (text, None)."""
+    idx = text.find(" … [display clipped")
+    if idx < 0:
+        return text, None
+    return text[:idx], text[idx:]
+
+def _disp_width(text):
+    """Return the display width of text (accounting for wide chars)."""
+    return sum(_cw(c) for c in text)
+
 def _cw(char):
     if unicodedata.combining(char) or unicodedata.category(char) in ("Cf", "Mn", "Me"):
         return 0
@@ -180,14 +192,15 @@ def _time_label():
 
 
 def _arguments_display(name, args):
+    """Return the FULL (unclipped) args display string."""
     if not isinstance(args, dict):
-        return _clip(args, TERMINAL_ARGS_CHARS)
+        return str(args)
     obj = dict(args)
     if name == "send":
         for key in ("message", "text", "content"):
             if key in obj:
                 obj[key] = "<shown below>"
-    return _clip(json.dumps(obj, ensure_ascii=False, separators=(", ", ": "), default=str), TERMINAL_ARGS_CHARS)
+    return json.dumps(obj, ensure_ascii=False, separators=(", ", ": "), default=str)
 
 
 def _send_message(args):
@@ -216,6 +229,11 @@ _HISTORY = []
 _HISTORY_INDEX = None
 _SCROLL = 0                         # number of visual rows above latest
 _LOG_DRAGGING = False                # dragging the log's own scrollbar
+_SELECTING = False                   # dragging in log area to select text
+_SEL_START = None                    # (visual_row, col) of selection start
+_SEL_END = None                      # (visual_row, col) of selection end
+_ROW_COUNTER = 0                       # unique ID per _ROWS entry
+_EXPANDED = set()                     # set of expanded row IDs (clipped → full)
 _MOUSE_SCROLL_LINES = 3
 _SHUTDOWN = False
 _COLOR_PAIRS = {}
@@ -225,6 +243,7 @@ _PIN_TIME = ""
 _PIN_SCROLL = 0
 _PIN_MTIME = None
 _PIN_VISIBLE = _PIN_PANEL
+_PIN_RESIZING = False
 _PIN_ROWS_CACHE = (None, None)
 _PIN_ANSI_PAIRS = {}
 _PIN_PAIR_NEXT = len(_PALETTE) + 1 if "_PALETTE" in globals() else 10
@@ -528,9 +547,20 @@ def _init_curses():
                             getattr(curses, "BUTTON5_PRESSED", 0) |
                             curses.BUTTON1_PRESSED | curses.BUTTON1_RELEASED |
                             curses.BUTTON1_CLICKED |
+                            getattr(curses, "BUTTON1_MOVED", 0) |
+                            getattr(curses, "BUTTON3_CLICKED", 0) |
                             getattr(curses, "REPORT_MOUSE_POSITION", 0))
             curses.mousemask(mouse_events)
             curses.mouseinterval(0)
+            # Explicitly enable button-event tracking ([?1002h) so the
+            # terminal reports mouse position continuously while a button is
+            # held — not only on press/release.  GNOME Terminal and many
+            # others need this even when curses.mousemask includes
+            # REPORT_MOUSE_POSITION.
+            try:
+                sys.stdout.write('[?1002h'); sys.stdout.flush()
+            except Exception:
+                pass
         except (curses.error, AttributeError):
             pass  # PageUp/PageDown always work when mouse reporting is unavailable.
         try:
@@ -571,6 +601,8 @@ def _restore_terminal():
         _SHUTDOWN = True
         _ACTIVE = False
         try:
+            sys.stdout.write('[?1002l')
+            sys.stdout.flush()
             _SCREEN.keypad(False)
             curses.nocbreak()
             curses.echo()
@@ -628,10 +660,23 @@ def _scroll_thumb(total_rows, visible_rows, scroll):
     thumb_top = round((max_scroll - min(max(0, scroll), max_scroll)) * travel / max_scroll)
     return thumb_height, thumb_top
 
+def _paste_from_clipboard():
+    """Read system clipboard via tkinter (lazy import; no third-party deps)."""
+    try:
+        import tkinter
+        root = tkinter.Tk()
+        root.withdraw()
+        text = root.clipboard_get()
+        root.destroy()
+        return text
+    except Exception:
+        return None
 
 def _handle_mouse():
     """Wheel scrolls the pane under the pointer; click/drag the log scrollbar."""
-    global _SCROLL, _PIN_SCROLL, _LOG_DRAGGING
+    global _SCROLL, _PIN_SCROLL, _LOG_DRAGGING, _COMPOSER, _CURSOR
+    global _SELECTING, _SEL_START, _SEL_END, _EXPANDED
+    global _PIN_RESIZING, _PIN_DESIRED_WIDTH
     try:
         _id, x, y, _z, buttons = curses.getmouse()
     except curses.error:
@@ -661,10 +706,19 @@ def _handle_mouse():
         return
 
     on_bar = x == left_width - 1 and top <= y <= bottom
+    on_sep = bool(layout and x == layout[1] and top <= y <= bottom)
     pressed = bool(buttons & curses.BUTTON1_PRESSED)
     clicked = bool(buttons & curses.BUTTON1_CLICKED)
     released = bool(buttons & curses.BUTTON1_RELEASED)
     moved = bool(buttons & getattr(curses, "REPORT_MOUSE_POSITION", 0))
+    # Drag the separator to resize the pinned panel width.
+    if (pressed or clicked) and on_sep:
+        _PIN_RESIZING = pressed
+    if _PIN_RESIZING and (moved or released):
+        new_side = limit - x - 1
+        _PIN_DESIRED_WIDTH = max(26, min(limit - 62, new_side))
+    if released:
+        _PIN_RESIZING = False
     if (pressed or clicked) and on_bar:
         _LOG_DRAGGING = pressed
     if (pressed or clicked) and on_bar or _LOG_DRAGGING and (moved or released):
@@ -678,6 +732,76 @@ def _handle_mouse():
     if released:
         _LOG_DRAGGING = False
 
+
+    # Left-click in log area: start text selection (character-level).
+    in_log = (top <= y <= bottom and 22 <= x < left_width - 1
+              and not on_bar and not over_panel)
+    if pressed and in_log and not _SELECTING:
+        _SELECTING = True
+        log_total = len(_visual_rows(left_width - 2))
+        _scroll = min(_SCROLL, max(0, log_total - visible))
+        _end = max(0, log_total - _scroll)
+        _begin = max(0, _end - visible)
+        _row = _begin + (y - top)
+        _col = max(0, x - 22)
+        _SEL_START = (_row, _col)
+        _SEL_END = (_row, _col)
+    # Live drag: while selecting, ANY mouse event updates the selection end.
+    # We do NOT require pressed/moved/released bits because many terminals
+    # (GNOME Terminal) send position-only events during drag with no button
+    # state bits set.
+    if _SELECTING and not released:
+        log_total2 = len(_visual_rows(left_width - 2))
+        _scroll2 = min(_SCROLL, max(0, log_total2 - visible))
+        _end2 = max(0, log_total2 - _scroll2)
+        _begin2 = max(0, _end2 - visible)
+        # Clamp coordinates to the log pane so dragging outside still works.
+        clamped_y = max(top, min(bottom, y))
+        clamped_x = max(22, min(left_width - 2, x))
+        _row2 = _begin2 + (clamped_y - top)
+        _col2 = max(0, clamped_x - 22)
+        _SEL_END = (_row2, _col2)
+    if released and _SELECTING:
+        # Simple click (no drag) on an expandable row: toggle expansion.
+        if _SEL_START == _SEL_END:
+            log_total_r = len(_visual_rows(left_width - 2))
+            _scroll_r = min(_SCROLL, max(0, log_total_r - visible))
+            _end_r = max(0, log_total_r - _scroll_r)
+            _begin_r = max(0, _end_r - visible)
+            _vrow_r = _begin_r + (y - top)
+            visual_r = _visual_rows(left_width - 2)
+            if 0 <= _vrow_r < len(visual_r):
+                _rid = visual_r[_vrow_r][6]
+                _ftext = visual_r[_vrow_r][7]
+                if _ftext is not None and _rid:
+                    if _rid in _EXPANDED:
+                        _EXPANDED.discard(_rid)
+                    else:
+                        _EXPANDED.add(_rid)
+                    _SEL_START, _SEL_END = None, None
+                    _SELECTING = False
+                    _render()
+                    return
+        _SELECTING = False
+    # Click outside log without drag: clear selection.
+    if pressed and not in_log and not on_bar and not over_panel and y < height - 5:
+        _SEL_START, _SEL_END = None, None
+
+    # Right-click: copy selection in log, or paste into composer.
+    right_clicked = bool(buttons & getattr(curses, "BUTTON3_CLICKED", 0))
+    if right_clicked and y == height - 2:
+        text = _paste_from_clipboard()
+        if text:
+            global _COMPOSER, _CURSOR
+            text = text.strip("")
+            _COMPOSER = _COMPOSER[:_CURSOR] + text + _COMPOSER[_CURSOR:]
+            _CURSOR += len(text)
+    elif right_clicked and top <= y <= bottom:
+        sel = _sel_text()
+        if sel:
+            _copy_to_clipboard(sel)
+            _SEL_START, _SEL_END = None, None
+            _SELECTING = False
 
 def _handle_key(key):
     global _COMPOSER, _CURSOR, _SCROLL, _HISTORY_INDEX, _PIN_VISIBLE, _PIN_SCROLL
@@ -694,7 +818,7 @@ def _handle_key(key):
                     del _HISTORY[0]
                 # The queued text also appears in the log, without waiting for
                 # the agent to finish its current inference.
-                _ROWS.append((_time_label(), "QUEUED", message, "yellow", False))
+                _ROWS.append((_time_label(), "QUEUED", message, "yellow", False, 0, None))
                 _SCROLL = 0
             _COMPOSER, _CURSOR, _HISTORY_INDEX = "", 0, None
         elif key in ("\x7f", "\b", "\x08"):
@@ -757,15 +881,62 @@ def _handle_key(key):
             pass
 
 
+
+def _sel_text():
+    """Return selected text (character-level), or ''."""
+    if _SEL_START is None or _SEL_END is None:
+        return ""
+    if _SCREEN is None:
+        return ""
+    height, width = _SCREEN.getmaxyx()
+    limit = min(width - 1, _MAX_WIDTH)
+    layout = _pin_layout(limit)
+    lw = layout[0] if layout else limit
+    visual = _visual_rows(lw - 2)
+    sr, sc = _SEL_START
+    er, ec = _SEL_END
+    if (sr, sc) > (er, ec):
+        sr, sc, er, ec = er, ec, sr, sc
+    text_parts = []
+    for i in range(sr, er + 1):
+        if 0 <= i < len(visual):
+            body = visual[i][2]
+            if i == sr and i == er:
+                text_parts.append(body[sc:ec])
+            elif i == sr:
+                text_parts.append(body[sc:])
+            elif i == er:
+                text_parts.append(body[:ec])
+            else:
+                text_parts.append(body)
+    return "\n".join(text_parts)
+
+
+def _copy_to_clipboard(text):
+    """Write *text* to the system clipboard via tkinter."""
+    try:
+        import tkinter
+        root = tkinter.Tk()
+        root.withdraw()
+        root.clipboard_clear()
+        root.clipboard_append(text)
+        root.update()
+        root.destroy()
+    except Exception:
+        pass
+
+
 def _visual_rows(width):
     """Render event records as colored visual lines, preserving hard breaks."""
     rows = []
     body_width = max(6, width - 21)
-    for stamp, name, message, color, detail in _ROWS:
-        chunks = _wrap(message, body_width)
+    for stamp, name, message, color, detail, row_id, full_text in _ROWS:
+        text = full_text if full_text is not None and row_id in _EXPANDED else message
+        chunks = _wrap(text, body_width)
         for i, chunk in enumerate(chunks):
             rows.append((stamp if i == 0 and not detail else "",
-                         name if i == 0 else "", chunk, color, detail, i != 0))
+                         name if i == 0 else "", chunk, color, detail, i != 0,
+                         row_id, full_text))
     return rows
 
 
@@ -785,7 +956,7 @@ def _render():
     _SCREEN.erase()
 
     # Header: permanently visible, with contextual inference state.
-    _put(0, 1, "◈  I T E R", _attr("red", True))
+    _put(0, 1, "◈  I T E R", _attr("pink", True))
     _put(0, 15, "// AUTONOMOUS CONSOLE", _attr("muted"))
     phase = _PHASE
     if phase == "THINKING":
@@ -804,7 +975,7 @@ def _render():
     scroll = min(_SCROLL, max_scroll)
     end = max(0, len(visual) - scroll)
     begin = max(0, end - available)
-    for y, (stamp, name, body, color, detail, continuation) in enumerate(visual[begin:end], top):
+    for y, (stamp, name, body, color, detail, continuation, _rid, _ftext) in enumerate(visual[begin:end], top):
         _put(y, 1, stamp, _attr("muted"))
         if name:
             marker = "┆" if detail else "◆"
@@ -812,7 +983,46 @@ def _render():
             _put(y, 13, name[:8].ljust(8), _attr(color, True))
         elif continuation:
             _put(y, 11, "│", _attr("muted"))
-        _put(y, 22, body, _attr(color, False), max(1, left_width - 23))
+        # Highlight selected characters with reverse video.
+        vis_idx = begin + (y - top)
+        body_attr = _attr(color, False)
+        if _SEL_START is not None and _SEL_END is not None:
+            sr, sc = _SEL_START
+            er, ec = _SEL_END
+            if (sr, sc) > (er, ec):
+                sr, sc, er, ec = er, ec, sr, sc
+            max_col = min(len(body), left_width - 23)
+            if sr <= vis_idx <= er:
+                if vis_idx == sr and vis_idx == er:
+                    c1, c2 = min(sc, ec), max(sc, ec)
+                    c1 = min(c1, max_col)
+                    c2 = min(c2, max_col)
+                    _put(y, 22, body[:c1], body_attr, max(1, left_width - 23))
+                    if c2 > c1:
+                        _put(y, 22 + c1, body[c1:c2], body_attr | curses.A_REVERSE, max(1, left_width - 23 - c1))
+                    _put(y, 22 + c2, body[c2:], body_attr, max(1, left_width - 23 - c2))
+                elif vis_idx == sr:
+                    c1 = min(sc, max_col)
+                    _put(y, 22, body[:c1], body_attr, max(1, left_width - 23))
+                    _put(y, 22 + c1, body[c1:], body_attr | curses.A_REVERSE, max(1, left_width - 23 - c1))
+                elif vis_idx == er:
+                    c2 = min(ec, max_col)
+                    _put(y, 22, body[:c2], body_attr | curses.A_REVERSE, max(1, left_width - 23))
+                    _put(y, 22 + c2, body[c2:], body_attr, max(1, left_width - 23 - c2))
+                else:
+                    _put(y, 22, body, body_attr | curses.A_REVERSE, max(1, left_width - 23))
+            else:
+                _put(y, 22, body, body_attr, max(1, left_width - 23))
+        else:
+            marker_idx = body.find(" … [display clipped")
+            if marker_idx >= 0:
+                main = body[:marker_idx]
+                marker = body[marker_idx:]
+                w = _disp_width(main)
+                _put(y, 22, main, body_attr, max(1, left_width - 23))
+                _put(y, 22 + w, marker, _attr("lime", False), max(1, left_width - 23 - w))
+            else:
+                _put(y, 22, body, body_attr, max(1, left_width - 23))
 
     # Native terminal scrollback does not cover curses' fullscreen buffer.
     # Draw a scrollbar that controls this pane's real scroll offset instead.
@@ -826,8 +1036,9 @@ def _render():
     # Right-hand pinned panel, wholly independent of scrolling event rows.
     if layout:
         _, border_x, right_x, right_width = layout
+        sep_attr = _attr("cyan", True) if _PIN_RESIZING else _attr("muted")
         for y in range(3, bottom + 1):
-            _put(y, border_x, "│", _attr("muted"))
+            _put(y, border_x, "│", sep_attr)
         _put(3, right_x, "◈ PINNED // " + _PIN_TITLE, _attr("cyan", True), right_width)
         _put(4, right_x, (_PIN_TIME or "Awaiting ui_panel"), _attr("muted"), right_width)
         _put(5, right_x, "─" * right_width, _attr("muted"), right_width)
@@ -850,7 +1061,7 @@ def _render():
     # Dedicated composer below log: never overwritten by output.
     _put(height-4, 0, "─" * limit, _attr("cyan"))
     _put(height-3, 2, "MESSAGE  ❯", _attr("cyan", True))
-    _put(height-3, 17, "Enter send · ↑↓ history · Wheel/PgUp/PgDn logs · F2 panel · F3/F4 panel scroll",
+    _put(height-3, 17, "Enter send · ↑↓ history · Wheel/PgUp/PgDn logs · F2 panel · F3/F4 panel scroll · Left-drag select · Drag separator resize · Right-click copy/paste",
          _attr("muted"), max(1, limit - 17))
     _put(height-2, 2, "❯", _attr("yellow", True))
     composer_width = max(1, limit - 6)
@@ -876,8 +1087,8 @@ def _render():
     _SCREEN.refresh()
 
 
-def _append(label, message, color="muted", detail=False):
-    global _SCROLL
+def _append(label, message, color="muted", detail=False, full_text=None):
+    global _SCROLL, _ROW_COUNTER
     message = _clean(message)
     with _LOCK:
         if _ACTIVE and _SCROLL > 0 and _SCREEN is not None:
@@ -886,7 +1097,8 @@ def _append(label, message, color="muted", detail=False):
             layout = _pin_layout(limit)
             left_width = layout[0] if layout else limit
             _SCROLL += len(_wrap(message, max(6, left_width - 23)))
-        _ROWS.append((_time_label(), str(label).upper(), message, color, detail))
+        _ROW_COUNTER += 1
+        _ROWS.append((_time_label(), str(label).upper(), message, color, detail, _ROW_COUNTER, full_text))
         if _ACTIVE:
             _render()
         else:
@@ -899,7 +1111,14 @@ def _print_event(label, message, color, detail=False):
     prefix = (" " * 12 if detail else f"{_time_label()}  ") + f"{label.upper():<9} "
     for index, part in enumerate(_wrap(message, width - len(prefix) - 1)):
         leader = prefix if index == 0 else " " * len(prefix)
-        sys.stdout.write(_style(leader + part, color, bold=False) + "\n")
+        marker_idx = part.find(" … [display clipped")
+        if marker_idx >= 0:
+            main = part[:marker_idx]
+            marker = part[marker_idx:]
+            sys.stdout.write(_style(leader + main, color, bold=False))
+            sys.stdout.write(_style(marker, "lime", bold=False) + "\n")
+        else:
+            sys.stdout.write(_style(leader + part, color, bold=False) + "\n")
     sys.stdout.flush()
 
 
@@ -916,7 +1135,7 @@ def header(model, session_id, history_count):
     with _LOCK:
         _read_pin_file(force=True)
         if _init_curses():
-            _ROWS.append((_time_label(), "SYSTEM", f"Ready · {history_count} history messages · input active", "cyan", False))
+            _ROWS.append((_time_label(), "SYSTEM", f"Ready · {history_count} history messages · input active", "cyan", False, 0, None))
             _render()
         else:
             _print_event("ITER", f"{model} · session {str(session_id)[:8]} · {history_count} messages", "cyan")
@@ -928,12 +1147,20 @@ def tool_call(name, args, ret, failed):
         _append("SEND", name, "cyan")
         msg = _send_message(args)
         if msg is not None:
-            _append("MESSAGE", _clip(msg, TERMINAL_SEND_CHARS), "cyan", True)
+            clipped = _clip(msg, TERMINAL_SEND_CHARS)
+            _append("MESSAGE", clipped, "cyan", True,
+                    full_text=str(msg) if "display clipped" in clipped else None)
     else:
         _append("TOOL", name, "pink")
-        _append("ARGS", _arguments_display(name, args), "violet", True)
+        args_full = _arguments_display(name, args)
+        args_clipped = _clip(args_full, TERMINAL_ARGS_CHARS)
+        _append("ARGS", args_clipped, "violet", True,
+                full_text=args_full if "display clipped" in args_clipped else None)
     if ret is not None and str(ret) not in ("", "None"):
-        _append("ERROR" if failed else "RESULT", _clip(ret, TERMINAL_RESULT_CHARS), "red" if failed else "green", True)
+        clipped = _clip(ret, TERMINAL_RESULT_CHARS)
+        _append("ERROR" if failed else "RESULT", clipped,
+                "red" if failed else "green", True,
+                full_text=str(ret) if "display clipped" in clipped else None)
     elif failed:
         _append("ERROR", "Tool failed", "red", True)
 
@@ -951,7 +1178,7 @@ def llm_complete(duration, response):
         in_tokens = getattr(usage, "prompt_tokens", None)
         out_tokens = getattr(usage, "completion_tokens", None)
         if in_tokens is not None or out_tokens is not None:
-            tokens = f" · tokens {in_tokens or '?'}→{out_tokens or '?'}"
+            tokens = f" · tokens {in_tokens or '?'} → {out_tokens or '?'}"
     try:
         calls = len(response.choices[0].message.tool_calls or [])
     except (AttributeError, IndexError, TypeError):
@@ -993,5 +1220,5 @@ def retry(message):
 def stopped():
     _append("OFFLINE", "Iter stopped", "muted")
     _restore_terminal()
-    sys.stdout.write("\nIter stopped.\n")
+    sys.stdout.write("\nIter stopped!\n")
     sys.stdout.flush()
