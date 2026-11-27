@@ -221,6 +221,19 @@ def apply_transformation(messages, tools, paths):
             errors.append(f"[RUNTIME ERROR in {path}: {type(error).__name__}: {error}. Repair {path} if needed.]")
     return messages, tools, "\n".join(errors)
 
+
+def load_memory():
+    memory_paths = [path for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts)]
+    memory_contents = [(path, path.read_text(encoding="utf-8", errors="replace").strip()) for path in memory_paths]
+    memory_len = sum(len(content) for _, content in memory_contents)
+    if memory_len <= MAX_MEMORY_CHARS:
+        MARGIN = MAX_MEMORY_CHARS - memory_len
+        MEMORY = f"[{MARGIN} CHARACTERS BELOW MAXIMUM]\n./memory/:\n"
+        MEMORY += "\n\n".join(f"{path}:\n{content}" for path, content in memory_contents)
+    else:
+        MEMORY = "./memory/:\n" + "\n".join(str(path) for path in memory_paths)
+    return MEMORY, memory_len - MAX_MEMORY_CHARS
+
 # --------------------------------------------------------------------
 # 4. Main loop
 # --------------------------------------------------------------------
@@ -290,18 +303,10 @@ while True:
             if omitted_transformations > 0:
                 tui.warning("XFORM !", f"{omitted_transformations} transformations excluded (MAX_CONTEXT_TRANSFORMATIONS={MAX_CONTEXT_TRANSFORMATIONS})")
                 temporary_message += [{"role": "user", "content": f"[CONTEXT TRANSFORMATION LIMIT REACHED: {omitted_transformations} transformations are omitted and will not execute. Consolidate or remove transformations if they are needed.]"}]
-            memory_paths = [path for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts)]
-            memory_contents = [(path, path.read_text(encoding="utf-8", errors="replace").strip()) for path in memory_paths]
-            memory_len = sum(len(content) for _, content in memory_contents)
-            if memory_len <= MAX_MEMORY_CHARS:
-                MARGIN = MAX_MEMORY_CHARS - memory_len
-                MEMORY = f"[{MARGIN} CHARACTERS BELOW MAXIMUM]\n./memory/:\n"
-                MEMORY += "\n\n".join(f"{path}:\n{content}" for path, content in memory_contents)
-            else:
-                DIFF = memory_len - MAX_MEMORY_CHARS
-                MEMORY = "./memory/:\n" + "\n".join(str(path) for path in memory_paths)
-                tui.warning("MEMORY !", f"Capacity exceeded by {DIFF} characters")
-                temporary_message += [{"role": "user", "content": f"[MEMORY FOLDER TOTAL CHARACTER CAPACITY BY FILES NOT BEGINNING WITH _ EXCEEDED BY {DIFF} CHARS. FIX THIS FIRST.]"}]
+            MEMORY, diff = load_memory()
+            if diff > 0:
+                tui.warning("MEMORY !", f"Capacity exceeded by {diff} characters")
+                temporary_message += [{"role": "user", "content": f"[MEMORY FOLDER TOTAL CHARACTER CAPACITY BY FILES NOT BEGINNING WITH _ EXCEEDED BY {diff} CHARS. FIX THIS FIRST.]"}]
             request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS, active_transformations)
             if transformation_error:
