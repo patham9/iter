@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import uuid
 import re
-import log
+import tui
 import utils
 from pathlib import Path
 
@@ -133,15 +133,15 @@ def get_current_time():
 def receive():
     events = []
     # The fullscreen TUI owns stdin; collect its completed input lines.
-    if log.terminal_ui_active():
+    if tui.terminal_ui_active():
         while True:
-            line = log.poll_input()
+            line = tui.poll_input()
             if not line:
                 break
             events.append("[terminal] " + line)
     paths = [path for path in sorted(Path("channels").glob("*.py")) if not path.name.startswith("_")]
     for path in paths:
-        if log.terminal_ui_active() and path.stem == "terminal":
+        if tui.terminal_ui_active() and path.stem == "terminal":
             continue  # Avoid a competing stdin reader.
         try:
             result = invoke_dynamic(path, "receive")
@@ -156,7 +156,7 @@ def receive():
 
 
 def slow_wait_for_input():
-    log.wait(SLOW_STEP_DELAY)
+    tui.wait(SLOW_STEP_DELAY)
     for second in range(SLOW_STEP_DELAY):
         time.sleep(1)
         event_append = receive()
@@ -237,7 +237,7 @@ Path("transformations").mkdir(exist_ok=True)
 post_task_mode, autonomous_steps, new_burst, pending_event_append = False, 0, True, ""
 cleanup_interval = MAX_EXPERIENCE_SIZE - RETAIN_EXPERIENCE_SIZE
 cleanup_bucket = -1  # clean once after a restart; the loop then records the bucket from the loaded length
-log.header(MODEL, SESSION_ID, len(experience))
+tui.header(MODEL, SESSION_ID, len(experience)) # Starts Terminal UI
 while True:
     current_bucket = len(experience) // cleanup_interval
     if current_bucket > cleanup_bucket:
@@ -259,14 +259,14 @@ while True:
         event_append = pending_event_append or receive()
         if event_append:
             autonomous_steps, new_burst, post_task_mode = 0, False, False
-            log.incoming(event_append)
+            tui.incoming(event_append)
             experience += [{"role": "user", "content": "Step " + get_current_time() + ": " + event_append}]
             save_experience(experience)
             pending_event_append = ""
             base_temporary_message = []
         elif new_burst:
             post_task_mode, new_burst = True, False
-            log.status("Autonomous task selection")
+            tui.status("Autonomous task selection")
             base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [TASK COMPLETED. DO NOT RE-SEND THE COMPLETED RESPONSE BUT SEND IN CASE YOU FORGOT. NOW QUERY FOR AND PICK A TASK BASED ON YOUR GOALS, PREFERABLY MEMORY CONSOLIDATION: FINDING EPISODES WHICH SUPPORT / CONTRADICT LTM ITEMS, LINKING EPISODES, PROMOTING USEFUL MEMORIES]"}]
         elif post_task_mode:
             base_temporary_message = [{"role": "user", "content": "Step " + get_current_time() + ": [NO NEW USER INPUT. CONTINUE AUTONOMOUS WORK. DO NOT REPEAT THE PREVIOUS RESPONSE. ONLY USE send FOR GENUINELY NEW INFORMATION OR WHEN USER INPUT IS NEEDED.]"}]
@@ -280,15 +280,15 @@ while True:
                 temporary_message += retry_message
             INOPS, omitted_tools, tool_load_error = load_tools()
             if tool_load_error:
-                log.error("TOOL !", tool_load_error)
+                tui.error("TOOL !", tool_load_error)
                 temporary_message += [{"role": "user", "content": tool_load_error}]
             if omitted_tools > 0:
-                log.warning("WARN", f"{omitted_tools} tools excluded (MAX_TOOLS={MAX_TOOLS})")
+                tui.warning("WARN", f"{omitted_tools} tools excluded (MAX_TOOLS={MAX_TOOLS})")
                 temporary_message += [{"role": "user", "content": f"[TOOL LIMIT REACHED: {omitted_tools} tools are currently omitted. Consolidate or remove tools if they are needed.]"}]
             TOOLS = native_tools(INOPS)
             TRANSFORMATIONS, active_transformations, omitted_transformations = load_transformation_descriptions()
             if omitted_transformations > 0:
-                log.warning("XFORM !", f"{omitted_transformations} transformations excluded (MAX_CONTEXT_TRANSFORMATIONS={MAX_CONTEXT_TRANSFORMATIONS})")
+                tui.warning("XFORM !", f"{omitted_transformations} transformations excluded (MAX_CONTEXT_TRANSFORMATIONS={MAX_CONTEXT_TRANSFORMATIONS})")
                 temporary_message += [{"role": "user", "content": f"[CONTEXT TRANSFORMATION LIMIT REACHED: {omitted_transformations} transformations are omitted and will not execute. Consolidate or remove transformations if they are needed.]"}]
             memory_paths = [path for path in sorted(Path("memory").rglob("*")) if path.is_file() and not any(part.startswith("_") for part in path.relative_to("memory").parts)]
             memory_contents = [(path, path.read_text(encoding="utf-8", errors="replace").strip()) for path in memory_paths]
@@ -300,19 +300,19 @@ while True:
             else:
                 DIFF = memory_len - MAX_MEMORY_CHARS
                 MEMORY = "./memory/:\n" + "\n".join(str(path) for path in memory_paths)
-                log.warning("MEMORY !", f"Capacity exceeded by {DIFF} characters")
+                tui.warning("MEMORY !", f"Capacity exceeded by {DIFF} characters")
                 temporary_message += [{"role": "user", "content": f"[MEMORY FOLDER TOTAL CHARACTER CAPACITY BY FILES NOT BEGINNING WITH _ EXCEEDED BY {DIFF} CHARS. FIX THIS FIRST.]"}]
             request_messages = [{"role": "system", "content": "prompt.txt:\n" + open("prompt.txt", encoding="utf-8", errors="replace").read().strip() + "\n\n./transformations/:\n" + TRANSFORMATIONS + "\n\n" + MEMORY}] + experience + temporary_message
             request_messages, request_tools, transformation_error = apply_transformation(request_messages, TOOLS, active_transformations)
             if transformation_error:
-                log.error("XFORM !", transformation_error)
+                tui.error("XFORM !", transformation_error)
                 request_messages += [{"role": "user", "content": transformation_error}]
-            log.llm_start()
+            tui.llm_start()
             started = time.monotonic()
             response, used_model = utils.chat_completion(client, MODEL, BACKUP_MODEL, messages=request_messages, tools=request_tools, tool_choice=TOOL_CHOICE, max_tokens=MAX_TOKENS, extra_body={ "enable_thinking": True})
             if used_model != MODEL:
-                log.warning("BACKUP !", f"{MODEL} refused; used LLM_BACKUP_MODEL {used_model}")
-            log.llm_complete(time.monotonic() - started, response)
+                tui.warning("BACKUP !", f"{MODEL} refused; used LLM_BACKUP_MODEL {used_model}")
+            tui.llm_complete(time.monotonic() - started, response)
             message = response.choices[0].message
             if message.content:
                 message.content += "\n[NOT DELIVERED TO ANY CHANNEL. IF THIS WAS INTENDED AS COMMUNICATION, USE send.]"
@@ -320,10 +320,10 @@ while True:
                 message.tool_calls = message.tool_calls[:MAX_TOOL_CALLS]
                 break
             if response.choices[0].finish_reason == "length":
-                log.retry("Output token limit reached without a tool call")
+                tui.retry("Output token limit reached without a tool call")
                 retry_message = [{"role": "user", "content": "[OUTPUT TOKEN LIMIT REACHED. CALL THE REQUIRED TOOL CONCISELY.]"}]
             else:
-                log.retry("No tool call returned; requesting one")
+                tui.retry("No tool call returned; requesting one")
                 retry_message = [{"role": "user", "content": f"[YOUR PREVIOUS RESPONSE CONTAINED NO TOOL CALL AND WAS NOT DELIVERED. CALL AT LEAST ONE TOOL NOW. IF YOU INTENDED THIS CONTENT AS COMMUNICATION, USE send: {message.content!r}]"}]
         experience += [{key: value for key, value in message.model_dump(exclude_none=True).items() if KEEP_REASONING_IN_EPISODE or key not in ("reasoning", "reasoning_details", "reasoning_content")}]
         for tool_call in message.tool_calls:
@@ -354,7 +354,7 @@ while True:
             if len(ret) > MAX_TOOL_OUTPUT_CHARS:
                 ret = ret[:MAX_TOOL_OUTPUT_CHARS] + " [TRUNCATED]"
             experience += [{"role": "tool", "tool_call_id": tool_call.id, "content": "Step " + get_current_time() + ": " + ret}]
-            log.tool_call(tool_name, tool_arguments, ret, failed)
+            tui.tool_call(tool_name, tool_arguments, ret, failed)
         history_checkpoint = len(experience) #tool calls succeeded, even on later exception we won't unroll them
         save_experience(experience)
         autonomous_steps = 0 if event_append else autonomous_steps + 1
@@ -366,9 +366,9 @@ while True:
             autonomous_steps = 0
             pending_event_append = slow_wait_for_input()
     except KeyboardInterrupt:
-        log.stopped()
+        tui.stopped()
         break
     except Exception as error:
-        log.failure(f"{type(error).__name__}: {error}")
+        tui.failure(f"{type(error).__name__}: {error}")
         experience = experience[:history_checkpoint]
         time.sleep(ERROR_RECOVERY_TIME)
